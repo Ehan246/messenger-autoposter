@@ -1,0 +1,13 @@
+{
+  "name": "messenger-autoposter",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@dongdev/fca-unofficial": "^4.0.3",
+    "fca-unofficial": "^1.3.9",
+    "node-cron": "^3.0.3"
+  }
+}
