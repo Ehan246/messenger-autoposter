@@ -2,7 +2,6 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const multer = require("multer");
 const fs = require("fs");
-const path = require("path");
 const login = require("@dongdev/fca-unofficial");
 
 const app = express();
@@ -12,9 +11,8 @@ app.use(bodyParser.json());
 const upload = multer({ dest: "uploads/" });
 if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
 
-// Session Store (User data memory te thakbe)
+// Session Store
 let sessions = {}; 
-// Structure: { token: { api: object, groups: [], adminId: string, appstateFile: string } }
 
 // ==========================================
 // LOGIN API (Token check)
@@ -22,7 +20,7 @@ let sessions = {};
 app.post("/login", (req, res) => {
   const { token } = req.body;
   
-  // Demo Token (Tui nijer moto kore token bariye nite parbi)
+  // Ekhane nijer moto token boshate parbi
   const validTokens = ["ehan123", "user456", "admin789"]; 
   
   if (!validTokens.includes(token)) {
@@ -37,7 +35,7 @@ app.post("/login", (req, res) => {
 });
 
 // ==========================================
-// UPLOAD COOKIES (Appstate)
+// UPLOAD COOKIES
 // ==========================================
 app.post("/upload", upload.single("appstate"), (req, res) => {
   const { token } = req.body;
@@ -50,7 +48,7 @@ app.post("/upload", upload.single("appstate"), (req, res) => {
 });
 
 // ==========================================
-// START BOT
+// START BOT (With Delay & Error Handling)
 // ==========================================
 app.post("/start", (req, res) => {
   const { token } = req.body;
@@ -61,29 +59,51 @@ app.post("/start", (req, res) => {
 
   const appState = JSON.parse(fs.readFileSync(sessions[token].appstateFile, "utf8"));
   
-  login({ appState }, (err, api) => {
-    if (err) return res.json({ success: false, message: "❌ Login Failed: " + err });
-    
-    sessions[token].api = api;
-    api.listenMqtt((err, event) => { if (err) console.error(err); });
-    
-    res.json({ success: true, message: "✅ Bot Online!" });
-  });
+  console.log(`⏳ [${token}] Login attempt...`);
+
+  // Delay 5s
+  setTimeout(() => {
+    login({ appState }, (err, api) => {
+      if (err) {
+        console.error(`❌ [${token}] Login Failed:`, err);
+        return res.json({ success: false, message: "❌ Login Failed: " + err });
+      }
+      
+      sessions[token].api = api;
+      console.log(`✅ [${token}] Bot Online!`);
+      
+      api.listenMqtt((err, event) => {
+        if (err) console.error(`[${token}] MQTT Error:`, err);
+      });
+      
+      res.json({ success: true, message: "✅ Bot Online!" });
+    });
+  }, 5000); 
 });
 
 // ==========================================
-// SCAN GROUPS
+// SCAN GROUPS (With Delay)
 // ==========================================
 app.post("/scan", (req, res) => {
   const { token } = req.body;
   if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
 
-  sessions[token].api.getThreadList(100, null, ["INBOX"], (err, list) => {
-    if (err) return res.json({ success: false, message: "❌ Facebook block koreche." });
-    
-    sessions[token].groups = list.filter(t => t.isGroup).map(t => t.threadID);
-    res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group paoa geche!` });
-  });
+  console.log(`⏳ [${token}] Scanning groups...`);
+  
+  // Delay 5s
+  setTimeout(() => {
+    sessions[token].api.getThreadList(100, null, ["INBOX"], (err, list) => {
+      if (err) {
+        console.error(`❌ [${token}] Scan failed:`, err);
+        return res.json({ success: false, message: "❌ Facebook block koreche. 10 min wait kore try kor." });
+      }
+      
+      sessions[token].groups = list.filter(t => t.isGroup).map(t => t.threadID);
+      console.log(`✅ [${token}] ${sessions[token].groups.length} groups found.`);
+      
+      res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group paoa geche!` });
+    });
+  }, 5000);
 });
 
 // ==========================================
