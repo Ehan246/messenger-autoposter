@@ -2,154 +2,111 @@ const fs = require("fs");
 const readline = require("readline");
 const login = require("@dongdev/fca-unofficial");
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-// Files check koro
-if (!fs.existsSync("appstate.json")) {
-  console.log("❌ appstate.json nai! Age file ta folder e rakho.");
-  process.exit(1);
+const APPSTATE_FILE = "appstate.json";
+const GROUPS_FILE = "my-groups.txt";
+let client = null;
+let groupsList = [];
+
+function ask(q) {
+  return new Promise(r => rl.question(q, r));
 }
 
-const appState = JSON.parse(fs.readFileSync("appstate.json", "utf8"));
-
-// Load config ba default
-let config = { ADMIN_ID: "100024128466507", TARGET_THREAD_ID: "" };
-if (fs.existsSync("config.json")) {
-  config = JSON.parse(fs.readFileSync("config.json", "utf8"));
-}
-
-function saveConfig() {
-  fs.writeFileSync("config.json", JSON.stringify(config, null, 2));
-}
-
-function askQuestion(query) {
-  return new Promise(resolve => rl.question(query, resolve));
-}
-
-async function showMenu() {
-  console.log("\n=================================");
-  console.log("🤖 MESSENGER AUTO-POSTER DASHBOARD");
-  console.log("=================================");
-  console.log("1. Login & Start Bot");
-  console.log("2. Change Admin ID (Current: " + config.ADMIN_ID + ")");
-  console.log("3. Change Appstate (Cookies)");
-  console.log("4. Post Message to All Groups");
-  console.log("5. Exit");
-  console.log("=================================");
-
-  const choice = await askQuestion("Choose option (1-5): ");
-
-  if (choice === "1") {
-    startBot();
-  } else if (choice === "2") {
-    const newAdmin = await askQuestion("Enter New Admin ID: ");
-    config.ADMIN_ID = newAdmin.trim();
-    saveConfig();
-    console.log("✅ Admin ID Updated!");
-    showMenu();
-  } else if (choice === "3") {
-    console.log("\n👉 Age c3c-fbstate ba extension theke notun 'appstate.json' download koro.");
-    const confirm = await askQuestion("File ta ki 'appstate.json' name e folder e rakha hoyeche? (y/n): ");
-    if (confirm.toLowerCase() === 'y') {
-      console.log("✅ Appstate updated! Bot restart koro (Option 1)");
-      // Note: Appstate update hoye gele bot restart korte hobe
-    }
-    showMenu();
-  } else if (choice === "4") {
-    const msg = await askQuestion("Enter message to post: ");
-    postToAll(msg);
-  } else if (choice === "5") {
-    console.log("Bye!");
-    process.exit(0);
-  } else {
-    console.log("❌ Invalid option!");
-    showMenu();
+async function loginBot() {
+  if (!fs.existsSync(APPSTATE_FILE)) {
+    return console.log(`❌ ${APPSTATE_FILE} nai! Age file ta rakho.`);
   }
-}
-
-function startBot() {
-  console.log("\n⏳ Logging in...");
   
-  login({ appState }, (err, api) => {
-    if (err) {
-      console.error("❌ Login Failed:", err);
-      return showMenu();
-    }
+  const appState = JSON.parse(fs.readFileSync(APPSTATE_FILE, "utf8"));
+  console.log("⏳ Logging in...");
 
-    console.log("✅ Logged in as:", config.ADMIN_ID);
-    
-    // MQTT init koro
+  login({ appState }, (err, api) => {
+    if (err) return console.log("❌ Login failed:", err);
+    client = api;
+    console.log("✅ Login successful!");
+
     api.listenMqtt((err, event) => {
-      if (err) return console.error("Listen error:", err);
-      
-      // Admin command check
-      if (event.body && event.senderID === config.ADMIN_ID) {
-        const cmd = event.body.trim().toLowerCase();
-        if (cmd === "!start") {
-          api.sendMessage("✅ Bot is online and listening!", event.threadID);
-        }
+      if (err) return console.error(err);
+      if (event.body) {
+        console.log(`📌 Message dhora porlo: "${event.body}"`);
       }
     });
 
-    console.log("🤖 Bot is listening in background!");
-    console.log("👉 Tui ekhon jekono group e giye bot ke message pathate parbi.");
-    
-    // Bot chalu hoye gele abar menu te jabe
-    setTimeout(() => {
+    if (fs.existsSync(GROUPS_FILE)) {
+      groupsList = fs.readFileSync(GROUPS_FILE, "utf8").split("\n").filter(id => id.trim());
+    }
+    setTimeout(showMenu, 2000);
+  });
+}
+
+async function scanGroups() {
+  if (!client) return console.log("❌ Age login kor!");
+  console.log("⏳ Group scan korchi... (wait)");
+
+  setTimeout(() => {
+    client.getThreadList(100, null, ["INBOX"], (err, list) => {
+      if (err) return console.log("❌ Facebook temporary block koreche. 10 min wait kore abar try kor.");
+      
+      groupsList = list.filter(t => t.isGroup).map(t => t.threadID);
+      fs.writeFileSync(GROUPS_FILE, groupsList.join("\n"));
+      console.log(`✅ ${groupsList.length} ta group scan hoyeche!`);
       showMenu();
-    }, 3000);
-  });
+    });
+  }, 5000);
 }
 
-async function postToAll(msg) {
-  console.log("⏳ Fetching groups from my-groups.txt...");
-  
-  if (!fs.existsSync("my-groups.txt")) {
-    console.log("❌ my-groups.txt nai! Age 'auto-list.js' chaliye list banao.");
-    return showMenu();
-  }
+async function postMessage() {
+  if (!client) return console.log("❌ Age login kor!");
+  if (groupsList.length === 0) return console.log("❌ Group list khali! Age scan kor.");
 
-  const groups = fs.readFileSync("my-groups.txt", "utf8").split("\n").filter(id => id.trim() !== "");
-  
-  if (groups.length === 0) {
-    console.log("❌ Kono group ID nai!");
-    return showMenu();
-  }
+  const msg = await ask("👉 Type your message to post: ");
+  if (!msg.trim()) return showMenu();
 
-  console.log(`🚀 Posting to ${groups.length} groups...`);
+  console.log(`🚀 ${groupsList.length} ta group e pathachhi...`);
+  let count = 0;
 
-  login({ appState }, (err, api) => {
-    if (err) return console.error("Login failed:", err);
-    
-    api.listenMqtt(() => {}); // MQTT init
-
+  groupsList.forEach((id, i) => {
     setTimeout(() => {
-      let count = 0;
-      groups.forEach((id, i) => {
-        setTimeout(() => {
-          api.sendMessage(msg, id, (e) => {
-            if (!e) {
-              count++;
-              console.log(`✅ Posted in: ${id}`);
-            } else {
-              console.error(`❌ Failed in: ${id}`);
-            }
-
-            if (i === groups.length - 1) {
-              setTimeout(() => {
-                console.log(`\n🎉 DONE! ${count}/${groups.length} groups e post hoyeche.`);
-                showMenu();
-              }, 2000);
-            }
-          });
-        }, i * 3000);
+      client.sendMessage(msg, id, (e) => {
+        if (!e) count++;
+        if (i === groupsList.length - 1) {
+          setTimeout(() => {
+            console.log(`🎉 Done! ${count}/${groupsList.length} groups e post hoyeche.`);
+            showMenu();
+          }, 3000);
+        }
       });
-    }, 5000);
+    }, i * 3000);
   });
 }
 
-// Start the dashboard
+function changeAdmin() {
+  fs.writeFileSync("config.json", JSON.stringify({ ADMIN_ID: "NEW_ID" }, null, 2));
+  console.log("✅ config.json e Admin ID change kor.");
+  showMenu();
+}
+
+async function showMenu() {
+  console.log("\n==========================");
+  console.log("🤖 MESSENGER DASHBOARD");
+  console.log("==========================");
+  console.log(`Status: ${client ? "✅ Logged in" : "❌ Not Logged in"}`);
+  console.log(`Groups: ${groupsList.length}`);
+  console.log("1. Login");
+  console.log("2. Scan Groups");
+  console.log("3. Post Message");
+  console.log("4. Change Admin ID");
+  console.log("5. Exit");
+
+  const c = await ask("Choose (1-5): ");
+
+  if (c === "1") loginBot();
+  else if (c === "2") scanGroups();
+  else if (c === "3") postMessage();
+  else if (c === "4") changeAdmin();
+  else if (c === "5") process.exit(0);
+  else showMenu();
+}
+
 showMenu();
