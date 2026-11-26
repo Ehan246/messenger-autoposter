@@ -15,7 +15,7 @@ let sessions = {};
 let liveLogs = []; 
 
 // ==========================================
-// LOGGER FUNCTION
+// LOGGER
 // ==========================================
 function logMessage(msg) {
   const time = new Date().toLocaleTimeString();
@@ -26,7 +26,7 @@ function logMessage(msg) {
 }
 
 // ==========================================
-// LIVE TERMINAL (SSE)
+// LIVE TERMINAL
 // ==========================================
 app.get("/live-logs", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
@@ -102,15 +102,6 @@ app.post("/start", (req, res) => {
       
       api.listenMqtt((err, event) => { 
         if (err) return console.error(err);
-        
-        if (sessions[token].scanning && event.type === "message" && event.threadID) {
-          if (event.threadID !== event.senderID) {
-            if (!sessions[token].groups.includes(event.threadID)) {
-              sessions[token].groups.push(event.threadID);
-              logMessage(`📌 [${token}] New Group ID: ${event.threadID}`);
-            }
-          }
-        }
       });
       
       res.json({ success: true, message: "✅ Bot Online!" });
@@ -119,35 +110,29 @@ app.post("/start", (req, res) => {
 });
 
 // ==========================================
-// START SCAN
+// SCAN GROUPS (DIRECT API FETCH)
 // ==========================================
-app.post("/scan-start", (req, res) => {
+app.post("/scan-direct", (req, res) => {
   const { token } = req.body;
   if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
 
-  sessions[token].scanning = true;
-  sessions[token].groups = [];
-  logMessage(`🔍 Scanning started for ${token}`);
-  
-  res.json({ success: true, message: "✅ Scan chalu! Ebar tomar group gulo te ekta kore message patha." });
-});
+  logMessage(`🔍 Direct API scan starting for ${token}...`);
 
-// ==========================================
-// STOP SCAN
-// ==========================================
-app.post("/scan-stop", (req, res) => {
-  const { token } = req.body;
-  if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
-  
-  sessions[token].scanning = false;
-  const commaSeparatedList = sessions[token].groups.join(",");
-  
-  logMessage(`🛑 Scan stopped for ${token}. Total: ${sessions[token].groups.length}`);
-  
-  res.json({ 
-    success: true, 
-    message: `✅ Scan stop! ${sessions[token].groups.length} ta group paoa geche.`,
-    groupsList: commaSeparatedList 
+  sessions[token].api.getThreadList(100, null, ["INBOX"], (err, list) => {
+    if (err) {
+      logMessage(`❌ Scan Failed: ${err.error || err}`);
+      return res.json({ success: false, message: "❌ Facebook block koreche. Terminal e error dekho." });
+    }
+    
+    const groups = list.filter(t => t.isGroup).map(t => t.threadID);
+    sessions[token].groups = groups;
+    
+    logMessage(`✅ Direct scan complete! Found ${groups.length} groups.`);
+    res.json({ 
+      success: true, 
+      message: `✅ ${groups.length} ta group paoa geche!`,
+      groupsList: groups.join(",")
+    });
   });
 });
 
@@ -197,7 +182,7 @@ app.post("/post", (req, res) => {
 });
 
 // ==========================================
-// WEB UI (HTML) - 2 TABS
+// WEB UI
 // ==========================================
 app.get("/", (req, res) => {
   res.send(`
@@ -214,34 +199,25 @@ app.get("/", (req, res) => {
         .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 24px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2); padding: 30px; }
         .header { text-align: center; margin-bottom: 20px; }
         .header h1 { font-size: 24px; font-weight: 700; color: #1a1a1a; }
-        
-        /* Tabs */
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
         .tab-btn { flex: 1; padding: 12px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; background: #e2e8f0; color: #475569; transition: 0.3s; }
         .tab-btn.active { background: #667eea; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
-        
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        
         .section { background: #f8faff; padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid #e6ecf5; }
         .section h3 { font-size: 15px; color: #333; margin-bottom: 12px; }
-        
         input[type="file"], input[type="text"], textarea { width: 100%; padding: 12px; margin-bottom: 10px; border: 2px solid #e1e5eb; border-radius: 10px; font-size: 14px; }
         textarea:focus, input:focus { border-color: #667eea; outline: none; }
-        
         button { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; }
         button:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
         .btn-secondary { background: #fff; color: #667eea; border: 2px solid #667eea; margin-top: 10px; }
         .btn-danger { background: #ef4444; }
         .hidden { display: none; }
-        
         .status { padding: 12px; border-radius: 10px; text-align: center; font-weight: 600; margin-bottom: 20px; font-size: 14px; }
         .online { background: #d1fae5; color: #065f46; }
         .offline { background: #fee2e2; color: #991b1b; }
-        
         .terminal-box { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 10px; height: 200px; overflow-y: auto; font-size: 13px; }
         .terminal-line { margin-bottom: 5px; white-space: pre-wrap; word-break: break-all; }
-        
         .group-list-box { background: #fff; border: 1px solid #e1e5eb; border-radius: 10px; max-height: 200px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 13px; margin-bottom: 10px; }
         .group-item { padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
       </style>
@@ -253,25 +229,21 @@ app.get("/", (req, res) => {
             <h1>🤖 Messenger Bot</h1>
           </div>
           
-          <!-- Login Section -->
           <div id="login-section">
             <input type="text" id="tokenInput" placeholder="Enter Access Token">
             <button onclick="login()">Login</button>
             <p id="loginMsg" style="color:red; text-align:center; margin-top:10px;"></p>
           </div>
 
-          <!-- Dashboard Section -->
           <div id="dashboard-section" class="hidden">
             <div id="statusBar" class="status offline">❌ Bot Offline</div>
             
-            <!-- Tabs -->
             <div class="tabs">
               <button class="tab-btn active" onclick="switchTab('tool1')">📥 Get Group UID</button>
               <button class="tab-btn" onclick="switchTab('tool2')">🚀 Main Tool</button>
               <button class="tab-btn" onclick="switchTab('settings')">⚙️ Settings</button>
             </div>
 
-            <!-- Tab 1: Get Group UID -->
             <div id="tool1" class="tab-content active">
               <div class="section">
                 <h3>Step 1: Upload Cookies</h3>
@@ -283,10 +255,8 @@ app.get("/", (req, res) => {
                 <button onclick="startBot()">🚀 Start Bot</button>
               </div>
               <div class="section">
-                <h3>Step 3: Scan Groups</h3>
-                <button onclick="startScan()" id="scanBtn">🔍 Start Scan</button>
-                <button onclick="stopScan()" id="stopScanBtn" class="btn-danger hidden" style="margin-top:10px;">🛑 Stop Scan</button>
-                <p style="font-size:12px; color:#666; margin-top:10px;">*Scan shuru kore prottek group e message pathao.</p>
+                <h3>Step 3: Scan Groups (Direct API)</h3>
+                <button onclick="scanDirect()" id="scanBtn">🔍 Direct Scan Now</button>
                 <div id="groupListContainer" class="hidden" style="margin-top:10px;">
                   <div id="groupList" class="group-list-box"></div>
                   <button onclick="downloadGroups()" class="btn-secondary">⬇️ Download IDs (.txt)</button>
@@ -294,7 +264,6 @@ app.get("/", (req, res) => {
               </div>
             </div>
 
-            <!-- Tab 2: Main Tool -->
             <div id="tool2" class="tab-content">
               <div class="section">
                 <h3>Step 1: Load Group IDs</h3>
@@ -311,7 +280,6 @@ app.get("/", (req, res) => {
               </div>
             </div>
 
-            <!-- Tab 3: Settings / Terminal -->
             <div id="settings" class="tab-content">
               <div class="section">
                 <h3>📟 Live Terminal</h3>
@@ -401,34 +369,17 @@ app.get("/", (req, res) => {
           }
         }
 
-        async function startScan() {
-          const res = await fetch('/scan-start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
+        async function scanDirect() {
+          const res = await fetch('/scan-direct', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
           const data = await res.json();
           
           if (data.success) {
-            document.getElementById('scanBtn').classList.add('hidden');
-            document.getElementById('stopScanBtn').classList.remove('hidden');
-          } else {
-            showMsg(data.message, false);
-          }
-        }
-
-        async function stopScan() {
-          const res = await fetch('/scan-stop', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
-          const data = await res.json();
-          
-          if (data.success) {
+            scannedGroups = data.groupsList.split(',');
+            let html = '';
+            scannedGroups.forEach(id => { html += '<div class="group-item">' + id + '</div>'; });
+            document.getElementById('groupList').innerHTML = html;
+            document.getElementById('groupListContainer').classList.remove('hidden');
             showMsg(data.message, true);
-            document.getElementById('scanBtn').classList.remove('hidden');
-            document.getElementById('stopScanBtn').classList.add('hidden');
-            
-            if (data.groupsList) {
-              scannedGroups = data.groupsList.split(',');
-              let html = '';
-              scannedGroups.forEach(id => { html += '<div class="group-item">' + id + '</div>'; });
-              document.getElementById('groupList').innerHTML = html;
-              document.getElementById('groupListContainer').classList.remove('hidden');
-            }
           } else {
             showMsg(data.message, false);
           }
