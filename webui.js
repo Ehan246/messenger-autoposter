@@ -65,7 +65,7 @@ app.post("/start", (req, res) => {
       api.listenMqtt((err, event) => { 
         if (err) return console.error(err);
         
-        // 🔥 Jodi Scan Mode chalu thake, ar group theke message ashe, tahole ID collect korbe
+        // 🔥 Scan mode e thakle message theke group ID collect korbe
         if (sessions[token].scanning && event.threadID && event.isGroup) {
           if (!sessions[token].groups.includes(event.threadID)) {
             sessions[token].groups.push(event.threadID);
@@ -80,14 +80,14 @@ app.post("/start", (req, res) => {
 });
 
 // ==========================================
-// START SCAN (Listening mode)
+// START SCAN
 // ==========================================
 app.post("/scan-start", (req, res) => {
   const { token } = req.body;
   if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
 
   sessions[token].scanning = true;
-  sessions[token].groups = []; // Purono list clear korbe
+  sessions[token].groups = []; // Purono list clear
   
   res.json({ success: true, message: "✅ Scan chalu! Ebar tomar group gulo te ekta kore message patha." });
 });
@@ -155,7 +155,7 @@ app.post("/post", (req, res) => {
 });
 
 // ==========================================
-// WEB UI (HTML) - MODERN DESIGN with SCANNER
+// WEB UI (HTML)
 // ==========================================
 app.get("/", (req, res) => {
   res.send(`
@@ -316,7 +316,6 @@ app.get("/", (req, res) => {
             document.getElementById('scanStatus').innerText = '🔍 Scanning... Ebar tomar group gulo te ekta kore message patha!';
             document.getElementById('scanBtn').disabled = true;
             
-            // Every 2 sec check korbe
             scanInterval = setInterval(fetchScannedGroups, 2000);
           } else {
             showMsg(data.message, false);
@@ -329,9 +328,13 @@ app.get("/", (req, res) => {
           
           if (data.success && data.groups.length > 0) {
             scannedGroups = data.groups;
-            document.getElementById('groupList').innerHTML = scannedGroups.map(id => `<div class="group-item">${id}</div>`).join('');
+            let html = '';
+            for (let i = 0; i < scannedGroups.length; i++) {
+              html += '<div class="group-item">' + scannedGroups[i] + '</div>';
+            }
+            document.getElementById('groupList').innerHTML = html;
             document.getElementById('groupListContainer').classList.remove('hidden');
-            document.getElementById('scanStatus').innerText = `🔍 ${scannedGroups.length} ta group paoa geche...`;
+            document.getElementById('scanStatus').innerText = '🔍 ' + scannedGroups.length + ' ta group paoa geche...';
           }
         }
 
