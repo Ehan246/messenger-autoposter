@@ -103,18 +103,11 @@ app.post("/start", (req, res) => {
       api.listenMqtt((err, event) => { 
         if (err) return console.error(err);
         
-        // 🔥 DEBUG LOG: Jodi kono event ashe, terminal e dekhabe
-        if (event && (event.body || event.threadID)) {
-          logMessage(`🔔 Event: type=${event.type} | threadID=${event.threadID} | senderID=${event.senderID} | body=${event.body || 'no-text'}`);
-        }
-
-        // 🔥 SCAN LOGIC: Jodi scan chalu thake, group ID collect korbe
-        if (sessions[token].scanning && event.threadID) {
-          // Group hole senderID ar threadID alada hoy
+        if (sessions[token].scanning && event.type === "message" && event.threadID) {
           if (event.threadID !== event.senderID) {
             if (!sessions[token].groups.includes(event.threadID)) {
               sessions[token].groups.push(event.threadID);
-              logMessage(`📌 [${token}] New Group ID Captured: ${event.threadID}`);
+              logMessage(`📌 [${token}] New Group ID: ${event.threadID}`);
             }
           }
         }
@@ -133,8 +126,8 @@ app.post("/scan-start", (req, res) => {
   if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
 
   sessions[token].scanning = true;
-  sessions[token].groups = []; 
-  logMessage(`🔍 Scanning started for ${token}. Sob group e ekta kore message patha!`);
+  sessions[token].groups = [];
+  logMessage(`🔍 Scanning started for ${token}`);
   
   res.json({ success: true, message: "✅ Scan chalu! Ebar tomar group gulo te ekta kore message patha." });
 });
@@ -149,7 +142,7 @@ app.post("/scan-stop", (req, res) => {
   sessions[token].scanning = false;
   const commaSeparatedList = sessions[token].groups.join(",");
   
-  logMessage(`🛑 Scan stopped for ${token}. Total groups found: ${sessions[token].groups.length}`);
+  logMessage(`🛑 Scan stopped for ${token}. Total: ${sessions[token].groups.length}`);
   
   res.json({ 
     success: true, 
@@ -204,7 +197,7 @@ app.post("/post", (req, res) => {
 });
 
 // ==========================================
-// WEB UI (HTML)
+// WEB UI (HTML) - 2 TABS
 // ==========================================
 app.get("/", (req, res) => {
   res.send(`
@@ -216,101 +209,136 @@ app.get("/", (req, res) => {
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
         * { font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
-        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); width: 100%; max-width: 500px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2); padding: 40px 30px; }
-        .header { text-align: center; margin-bottom: 30px; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 24px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2); padding: 30px; }
+        .header { text-align: center; margin-bottom: 20px; }
         .header h1 { font-size: 24px; font-weight: 700; color: #1a1a1a; }
-        .header p { color: #666; font-size: 14px; margin-top: 5px; }
-        .login-box input { width: 100%; padding: 15px; margin-bottom: 15px; border: 2px solid #e1e5eb; border-radius: 12px; font-size: 15px; transition: 0.3s; }
-        .login-box input:focus { border-color: #667eea; outline: none; }
+        
+        /* Tabs */
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { flex: 1; padding: 12px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; background: #e2e8f0; color: #475569; transition: 0.3s; }
+        .tab-btn.active { background: #667eea; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
+        
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
         .section { background: #f8faff; padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid #e6ecf5; }
-        .section h3 { font-size: 15px; color: #333; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-        input[type="file"] { width: 100%; margin-bottom: 10px; }
-        textarea, input[type="text"] { width: 100%; padding: 12px; margin-bottom: 10px; border: 2px solid #e1e5eb; border-radius: 10px; font-size: 14px; transition: 0.3s; resize: vertical; }
-        textarea:focus, input[type="text"]:focus { border-color: #667eea; outline: none; }
-        button { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+        .section h3 { font-size: 15px; color: #333; margin-bottom: 12px; }
+        
+        input[type="file"], input[type="text"], textarea { width: 100%; padding: 12px; margin-bottom: 10px; border: 2px solid #e1e5eb; border-radius: 10px; font-size: 14px; }
+        textarea:focus, input:focus { border-color: #667eea; outline: none; }
+        
+        button { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; }
         button:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
-        button:active { transform: translateY(0); }
         .btn-secondary { background: #fff; color: #667eea; border: 2px solid #667eea; margin-top: 10px; }
-        .btn-secondary:hover { background: #f0f2ff; }
         .btn-danger { background: #ef4444; }
-        .btn-danger:hover { background: #dc2626; box-shadow: 0 8px 20px rgba(239, 68, 68, 0.4); }
         .hidden { display: none; }
+        
         .status { padding: 12px; border-radius: 10px; text-align: center; font-weight: 600; margin-bottom: 20px; font-size: 14px; }
         .online { background: #d1fae5; color: #065f46; }
         .offline { background: #fee2e2; color: #991b1b; }
-        #msgBox { text-align: center; font-weight: 600; padding: 12px; border-radius: 10px; display: none; font-size: 14px; margin-top: 15px; }
-        .terminal-box { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 10px; height: 150px; overflow-y: auto; margin-top: 15px; font-size: 13px; border: 2px solid #333; }
+        
+        .terminal-box { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 10px; height: 200px; overflow-y: auto; font-size: 13px; }
         .terminal-line { margin-bottom: 5px; white-space: pre-wrap; word-break: break-all; }
+        
+        .group-list-box { background: #fff; border: 1px solid #e1e5eb; border-radius: 10px; max-height: 200px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 13px; margin-bottom: 10px; }
+        .group-item { padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
       </style>
     </head>
     <body>
-      <div class="glass-card">
-        <div class="header">
-          <h1>🤖 Messenger Bot</h1>
-          <p>Secure Multi-User Dashboard</p>
-        </div>
-        
-        <div id="login-section">
-          <div class="login-box">
+      <div class="container">
+        <div class="glass-card">
+          <div class="header">
+            <h1>🤖 Messenger Bot</h1>
+          </div>
+          
+          <!-- Login Section -->
+          <div id="login-section">
             <input type="text" id="tokenInput" placeholder="Enter Access Token">
             <button onclick="login()">Login</button>
-            <p id="loginMsg" style="color:red; text-align:center; margin-top:10px; font-size:14px;"></p>
-          </div>
-        </div>
-
-        <div id="dashboard-section" class="hidden">
-          <div id="statusBar" class="status offline">❌ Bot Offline</div>
-          
-          <div class="section">
-            <h3>1️⃣ Upload Cookies</h3>
-            <input type="file" id="cookieFile" accept=".json">
-            <button onclick="uploadCookie()">Upload appstate.json</button>
-          </div>
-          
-          <div class="section">
-            <h3>2️⃣ Bot Control</h3>
-            <button onclick="startBot()">🚀 Start Bot</button>
+            <p id="loginMsg" style="color:red; text-align:center; margin-top:10px;"></p>
           </div>
 
-          <div class="section">
-            <h3>📟 Live Terminal</h3>
-            <div id="terminal" class="terminal-box"></div>
-          </div>
+          <!-- Dashboard Section -->
+          <div id="dashboard-section" class="hidden">
+            <div id="statusBar" class="status offline">❌ Bot Offline</div>
+            
+            <!-- Tabs -->
+            <div class="tabs">
+              <button class="tab-btn active" onclick="switchTab('tool1')">📥 Get Group UID</button>
+              <button class="tab-btn" onclick="switchTab('tool2')">🚀 Main Tool</button>
+              <button class="tab-btn" onclick="switchTab('settings')">⚙️ Settings</button>
+            </div>
 
-          <div class="section">
-            <h3>3️⃣ Group Scanner</h3>
-            <button onclick="startScan()" id="scanBtn">🔍 Start Scan</button>
-            <button onclick="stopScan()" id="stopScanBtn" class="btn-danger hidden" style="margin-top:10px;">🛑 Stop Scan</button>
-            <div id="scanStatus" class="status" style="margin-top:10px; display:none;"></div>
-          </div>
+            <!-- Tab 1: Get Group UID -->
+            <div id="tool1" class="tab-content active">
+              <div class="section">
+                <h3>Step 1: Upload Cookies</h3>
+                <input type="file" id="cookieFile" accept=".json">
+                <button onclick="uploadCookie()">Upload appstate.json</button>
+              </div>
+              <div class="section">
+                <h3>Step 2: Start Bot</h3>
+                <button onclick="startBot()">🚀 Start Bot</button>
+              </div>
+              <div class="section">
+                <h3>Step 3: Scan Groups</h3>
+                <button onclick="startScan()" id="scanBtn">🔍 Start Scan</button>
+                <button onclick="stopScan()" id="stopScanBtn" class="btn-danger hidden" style="margin-top:10px;">🛑 Stop Scan</button>
+                <p style="font-size:12px; color:#666; margin-top:10px;">*Scan shuru kore prottek group e message pathao.</p>
+                <div id="groupListContainer" class="hidden" style="margin-top:10px;">
+                  <div id="groupList" class="group-list-box"></div>
+                  <button onclick="downloadGroups()" class="btn-secondary">⬇️ Download IDs (.txt)</button>
+                </div>
+              </div>
+            </div>
 
-          <div class="section">
-            <h3>4️⃣ Manual Group IDs (Auto fills after scan)</h3>
-            <input type="text" id="groupInput" placeholder="Paste IDs here: 12345678, 87654321">
-            <button onclick="saveGroups()">💾 Save Group IDs</button>
-          </div>
+            <!-- Tab 2: Main Tool -->
+            <div id="tool2" class="tab-content">
+              <div class="section">
+                <h3>Step 1: Load Group IDs</h3>
+                <button onclick="document.getElementById('groupFile').click()" class="btn-secondary">📁 Upload .txt File</button>
+                <input type="file" id="groupFile" accept=".txt" style="display:none;" onchange="loadFile()">
+                <p style="text-align:center; margin:10px 0; font-weight:bold;">OR</p>
+                <input type="text" id="groupInput" placeholder="Paste IDs here: 12345678, 87654321">
+                <button onclick="saveGroups()">💾 Save Group IDs</button>
+              </div>
+              <div class="section">
+                <h3>Step 2: Post Message</h3>
+                <textarea id="messageBox" placeholder="Type your message here..." rows="4"></textarea>
+                <button onclick="postMsg()">📤 Post to All Groups</button>
+              </div>
+            </div>
 
-          <div class="section">
-            <h3>5️⃣ Post Message</h3>
-            <textarea id="messageBox" placeholder="Type your message here..." rows="3"></textarea>
-            <button onclick="postMsg()">📤 Post to All Groups</button>
+            <!-- Tab 3: Settings / Terminal -->
+            <div id="settings" class="tab-content">
+              <div class="section">
+                <h3>📟 Live Terminal</h3>
+                <div id="terminal" class="terminal-box"></div>
+              </div>
+            </div>
+            
+            <div id="msgBox" style="display:none; padding:12px; border-radius:10px; text-align:center; font-weight:600; margin-top:15px;"></div>
           </div>
-
-          <div id="msgBox"></div>
         </div>
       </div>
 
       <script>
         let currentToken = "";
+        let scannedGroups = [];
         let eventSource = null;
+
+        function switchTab(tabId) {
+          document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+          document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+          document.getElementById(tabId).classList.add('active');
+          event.target.classList.add('active');
+        }
 
         function setupTerminal() {
           const terminal = document.getElementById('terminal');
-          terminal.innerHTML = '';
-          
           eventSource = new EventSource('/live-logs');
-
           eventSource.onmessage = function(event) {
             const logs = JSON.parse(event.data);
             logs.forEach(log => {
@@ -342,7 +370,7 @@ app.get("/", (req, res) => {
             currentToken = token;
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('dashboard-section').classList.remove('hidden');
-            document.getElementById('statusBar').innerText = '✅ Logged In Successfully';
+            document.getElementById('statusBar').innerText = '✅ Logged In';
             document.getElementById('statusBar').className = 'status online';
             setupTerminal();
           } else {
@@ -378,9 +406,6 @@ app.get("/", (req, res) => {
           const data = await res.json();
           
           if (data.success) {
-            document.getElementById('scanStatus').style.display = 'block';
-            document.getElementById('scanStatus').className = 'status online';
-            document.getElementById('scanStatus').innerText = '🔍 Scanning... Ebar tomar group gulo te ekta kore message patha!';
             document.getElementById('scanBtn').classList.add('hidden');
             document.getElementById('stopScanBtn').classList.remove('hidden');
           } else {
@@ -396,11 +421,37 @@ app.get("/", (req, res) => {
             showMsg(data.message, true);
             document.getElementById('scanBtn').classList.remove('hidden');
             document.getElementById('stopScanBtn').classList.add('hidden');
-            document.getElementById('scanStatus').style.display = 'none';
-            document.getElementById('groupInput').value = data.groupsList;
+            
+            if (data.groupsList) {
+              scannedGroups = data.groupsList.split(',');
+              let html = '';
+              scannedGroups.forEach(id => { html += '<div class="group-item">' + id + '</div>'; });
+              document.getElementById('groupList').innerHTML = html;
+              document.getElementById('groupListContainer').classList.remove('hidden');
+            }
           } else {
             showMsg(data.message, false);
           }
+        }
+
+        function downloadGroups() {
+          if(scannedGroups.length === 0) return;
+          const blob = new Blob([scannedGroups.join('\\n')], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'group_ids.txt';
+          a.click();
+        }
+
+        function loadFile() {
+          const file = document.getElementById('groupFile').files[0];
+          if(!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            document.getElementById('groupInput').value = e.target.result.replace(/\\n/g, ',');
+          };
+          reader.readAsText(file);
         }
 
         async function saveGroups() {
