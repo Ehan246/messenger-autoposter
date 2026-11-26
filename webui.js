@@ -56,7 +56,7 @@ app.post("/login", (req, res) => {
   }
   
   if (!sessions[token]) {
-    sessions[token] = { api: null, groups: [], adminId: "", appstateFile: `uploads/${token}.json`, scanning: false };
+    sessions[token] = { api: null, groups: [], adminId: "", appstateFile: `uploads/${token}.json` };
   }
   
   logMessage(`✅ Token login successful: ${token}`);
@@ -93,62 +93,50 @@ app.post("/start", (req, res) => {
   setTimeout(() => {
     login({ appState }, (err, api) => {
       if (err) {
-        logMessage(`❌ Login Failed for ${token}: ${err}`);
+        logMessage(`❌ Login Failed: ${err}`);
         return res.json({ success: false, message: "❌ Login Failed: " + err });
       }
       
       sessions[token].api = api;
       logMessage(`✅ Bot Online for ${token}!`);
-      
-      api.listenMqtt((err, event) => { 
-        if (err) return console.error(err);
-      });
-      
+      api.listenMqtt((err) => { if (err) console.error(err); });
       res.json({ success: true, message: "✅ Bot Online!" });
     });
   }, 3000);
 });
 
 // ==========================================
-// SCAN GROUPS (DIRECT API FETCH)
+// SCAN DIRECT
 // ==========================================
 app.post("/scan-direct", (req, res) => {
   const { token } = req.body;
   if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
 
-  logMessage(`🔍 Direct API scan starting for ${token}...`);
-
+  logMessage(`🔍 Direct API scan starting...`);
   sessions[token].api.getThreadList(100, null, ["INBOX"], (err, list) => {
     if (err) {
       logMessage(`❌ Scan Failed: ${err.error || err}`);
-      return res.json({ success: false, message: "❌ Facebook block koreche. Terminal e error dekho." });
+      return res.json({ success: false, message: "❌ Facebook block koreche." });
     }
     
     const groups = list.filter(t => t.isGroup).map(t => t.threadID);
     sessions[token].groups = groups;
-    
     logMessage(`✅ Direct scan complete! Found ${groups.length} groups.`);
-    res.json({ 
-      success: true, 
-      message: `✅ ${groups.length} ta group paoa geche!`,
-      groupsList: groups.join(",")
-    });
+    
+    res.json({ success: true, message: `✅ ${groups.length} ta group paoa geche!`, groupsList: groups.join(",") });
   });
 });
 
 // ==========================================
-// SAVE MANUAL GROUPS
+// SAVE GROUPS
 // ==========================================
 app.post("/save-groups", (req, res) => {
   const { token, groupIds } = req.body;
   if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
-  
-  if (!groupIds || groupIds.trim() === "") {
-    return res.json({ success: false, message: "❌ Group ID dao!" });
-  }
+  if (!groupIds || groupIds.trim() === "") return res.json({ success: false, message: "❌ Group ID dao!" });
 
   sessions[token].groups = groupIds.split(",").map(id => id.trim()).filter(id => id !== "");
-  logMessage(`💾 ${sessions[token].groups.length} groups saved for ${token}`);
+  logMessage(`💾 ${sessions[token].groups.length} groups saved.`);
   res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group ID save hoyeche!` });
 });
 
@@ -162,7 +150,6 @@ app.post("/post", (req, res) => {
   if (sessions[token].groups.length === 0) return res.json({ success: false, message: "❌ Age Group ID save kor!" });
 
   logMessage(`📤 Posting message to ${sessions[token].groups.length} groups...`);
-  
   let count = 0;
   const groups = sessions[token].groups;
 
@@ -182,113 +169,131 @@ app.post("/post", (req, res) => {
 });
 
 // ==========================================
-// WEB UI
+// WEB UI (MOBILE FIRST)
 // ==========================================
 app.get("/", (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Messenger Bot Dashboard</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Messenger Bot</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
-        * { font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-        .container { max-width: 900px; margin: 0 auto; }
-        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 24px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2); padding: 30px; }
+        * { font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 15px; display: flex; align-items: center; justify-content: center; }
+        .glass-card { background: rgba(255, 255, 255, 0.98); width: 100%; max-width: 450px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); padding: 25px 20px; }
+        
         .header { text-align: center; margin-bottom: 20px; }
-        .header h1 { font-size: 24px; font-weight: 700; color: #1a1a1a; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-        .tab-btn { flex: 1; padding: 12px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; background: #e2e8f0; color: #475569; transition: 0.3s; }
-        .tab-btn.active { background: #667eea; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
+        .header h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; }
+        .header p { color: #666; font-size: 13px; margin-top: 5px; }
+        
+        .login-box input { width: 100%; padding: 14px; margin-bottom: 12px; border: 2px solid #e1e5eb; border-radius: 12px; font-size: 15px; }
+        .login-box input:focus { border-color: #667eea; outline: none; }
+        
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; background: #f0f2f5; padding: 5px; border-radius: 12px; overflow-x: auto; }
+        .tab-btn { flex: 1; padding: 10px 5px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: #666; white-space: nowrap; }
+        .tab-btn.active { background: #fff; color: #667eea; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        .section { background: #f8faff; padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid #e6ecf5; }
-        .section h3 { font-size: 15px; color: #333; margin-bottom: 12px; }
+        
+        .section { background: #f8faff; padding: 15px; border-radius: 14px; margin-bottom: 15px; border: 1px solid #e6ecf5; }
+        .section h3 { font-size: 14px; color: #333; margin-bottom: 10px; }
+        
         input[type="file"], input[type="text"], textarea { width: 100%; padding: 12px; margin-bottom: 10px; border: 2px solid #e1e5eb; border-radius: 10px; font-size: 14px; }
         textarea:focus, input:focus { border-color: #667eea; outline: none; }
-        button { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-        button:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
-        .btn-secondary { background: #fff; color: #667eea; border: 2px solid #667eea; margin-top: 10px; }
+        
+        button { width: 100%; padding: 13px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+        button:active { transform: scale(0.98); }
+        .btn-secondary { background: #fff; color: #667eea; border: 2px solid #667eea; margin-top: 8px; }
         .btn-danger { background: #ef4444; }
         .hidden { display: none; }
-        .status { padding: 12px; border-radius: 10px; text-align: center; font-weight: 600; margin-bottom: 20px; font-size: 14px; }
+        
+        .status { padding: 10px; border-radius: 8px; text-align: center; font-weight: 600; margin-bottom: 15px; font-size: 13px; }
         .online { background: #d1fae5; color: #065f46; }
         .offline { background: #fee2e2; color: #991b1b; }
-        .terminal-box { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 10px; height: 200px; overflow-y: auto; font-size: 13px; }
-        .terminal-line { margin-bottom: 5px; white-space: pre-wrap; word-break: break-all; }
-        .group-list-box { background: #fff; border: 1px solid #e1e5eb; border-radius: 10px; max-height: 200px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 13px; margin-bottom: 10px; }
-        .group-item { padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+        
+        .terminal-box { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 12px; border-radius: 10px; height: 180px; overflow-y: auto; font-size: 12px; }
+        .terminal-line { margin-bottom: 4px; white-space: pre-wrap; word-break: break-all; }
+        
+        .group-list-box { background: #fff; border: 1px solid #e1e5eb; border-radius: 10px; max-height: 150px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 12px; margin-bottom: 10px; }
+        .group-item { padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
       </style>
     </head>
     <body>
-      <div class="container">
-        <div class="glass-card">
-          <div class="header">
-            <h1>🤖 Messenger Bot</h1>
-          </div>
-          
-          <div id="login-section">
+      <div class="glass-card">
+        <div class="header">
+          <h1>🤖 Messenger Bot</h1>
+          <p>Multi-User Dashboard</p>
+        </div>
+        
+        <!-- Login Section -->
+        <div id="login-section">
+          <div class="login-box">
             <input type="text" id="tokenInput" placeholder="Enter Access Token">
             <button onclick="login()">Login</button>
-            <p id="loginMsg" style="color:red; text-align:center; margin-top:10px;"></p>
+            <p id="loginMsg" style="color:red; text-align:center; margin-top:10px; font-size:13px;"></p>
+          </div>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div id="dashboard-section" class="hidden">
+          <div id="statusBar" class="status offline">❌ Bot Offline</div>
+          
+          <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab(event, 'tool1')">📥 Scan</button>
+            <button class="tab-btn" onclick="switchTab(event, 'tool2')">🚀 Post</button>
+            <button class="tab-btn" onclick="switchTab(event, 'settings')">⚙️ Terminal</button>
           </div>
 
-          <div id="dashboard-section" class="hidden">
-            <div id="statusBar" class="status offline">❌ Bot Offline</div>
-            
-            <div class="tabs">
-              <button class="tab-btn active" onclick="switchTab('tool1')">📥 Get Group UID</button>
-              <button class="tab-btn" onclick="switchTab('tool2')">🚀 Main Tool</button>
-              <button class="tab-btn" onclick="switchTab('settings')">⚙️ Settings</button>
+          <!-- Tool 1: Scan -->
+          <div id="tool1" class="tab-content active">
+            <div class="section">
+              <h3>1. Upload Cookies</h3>
+              <input type="file" id="cookieFile" accept=".json">
+              <button onclick="uploadCookie()">Upload appstate.json</button>
             </div>
-
-            <div id="tool1" class="tab-content active">
-              <div class="section">
-                <h3>Step 1: Upload Cookies</h3>
-                <input type="file" id="cookieFile" accept=".json">
-                <button onclick="uploadCookie()">Upload appstate.json</button>
-              </div>
-              <div class="section">
-                <h3>Step 2: Start Bot</h3>
-                <button onclick="startBot()">🚀 Start Bot</button>
-              </div>
-              <div class="section">
-                <h3>Step 3: Scan Groups (Direct API)</h3>
-                <button onclick="scanDirect()" id="scanBtn">🔍 Direct Scan Now</button>
-                <div id="groupListContainer" class="hidden" style="margin-top:10px;">
-                  <div id="groupList" class="group-list-box"></div>
-                  <button onclick="downloadGroups()" class="btn-secondary">⬇️ Download IDs (.txt)</button>
-                </div>
+            <div class="section">
+              <h3>2. Start Bot</h3>
+              <button onclick="startBot()">🚀 Start Bot</button>
+            </div>
+            <div class="section">
+              <h3>3. Scan Groups</h3>
+              <button onclick="scanDirect()" id="scanBtn">🔍 Direct Scan Now</button>
+              <div id="groupListContainer" class="hidden" style="margin-top:10px;">
+                <div id="groupList" class="group-list-box"></div>
+                <button onclick="downloadGroups()" class="btn-secondary">⬇️ Download IDs</button>
               </div>
             </div>
-
-            <div id="tool2" class="tab-content">
-              <div class="section">
-                <h3>Step 1: Load Group IDs</h3>
-                <button onclick="document.getElementById('groupFile').click()" class="btn-secondary">📁 Upload .txt File</button>
-                <input type="file" id="groupFile" accept=".txt" style="display:none;" onchange="loadFile()">
-                <p style="text-align:center; margin:10px 0; font-weight:bold;">OR</p>
-                <input type="text" id="groupInput" placeholder="Paste IDs here: 12345678, 87654321">
-                <button onclick="saveGroups()">💾 Save Group IDs</button>
-              </div>
-              <div class="section">
-                <h3>Step 2: Post Message</h3>
-                <textarea id="messageBox" placeholder="Type your message here..." rows="4"></textarea>
-                <button onclick="postMsg()">📤 Post to All Groups</button>
-              </div>
-            </div>
-
-            <div id="settings" class="tab-content">
-              <div class="section">
-                <h3>📟 Live Terminal</h3>
-                <div id="terminal" class="terminal-box"></div>
-              </div>
-            </div>
-            
-            <div id="msgBox" style="display:none; padding:12px; border-radius:10px; text-align:center; font-weight:600; margin-top:15px;"></div>
           </div>
+
+          <!-- Tool 2: Post -->
+          <div id="tool2" class="tab-content">
+            <div class="section">
+              <h3>1. Load Group IDs</h3>
+              <button onclick="document.getElementById('groupFile').click()" class="btn-secondary">📁 Upload .txt File</button>
+              <input type="file" id="groupFile" accept=".txt" style="display:none;" onchange="loadFile()">
+              <p style="text-align:center; margin:10px 0; font-weight:bold; font-size:13px;">OR</p>
+              <input type="text" id="groupInput" placeholder="Paste IDs here: 12345678, 87654321">
+              <button onclick="saveGroups()">💾 Save IDs</button>
+            </div>
+            <div class="section">
+              <h3>2. Post Message</h3>
+              <textarea id="messageBox" placeholder="Type your message here..." rows="3"></textarea>
+              <button onclick="postMsg()">📤 Post to All</button>
+            </div>
+          </div>
+
+          <!-- Tool 3: Terminal -->
+          <div id="settings" class="tab-content">
+            <div class="section">
+              <h3>📟 Live Terminal</h3>
+              <div id="terminal" class="terminal-box"></div>
+            </div>
+          </div>
+          
+          <div id="msgBox" style="display:none; padding:10px; border-radius:8px; text-align:center; font-weight:600; margin-top:10px; font-size:13px;"></div>
         </div>
       </div>
 
@@ -297,11 +302,11 @@ app.get("/", (req, res) => {
         let scannedGroups = [];
         let eventSource = null;
 
-        function switchTab(tabId) {
+        function switchTab(evt, tabId) {
           document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
           document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
           document.getElementById(tabId).classList.add('active');
-          event.target.classList.add('active');
+          evt.currentTarget.classList.add('active');
         }
 
         function setupTerminal() {
