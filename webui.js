@@ -103,13 +103,18 @@ app.post("/start", (req, res) => {
       api.listenMqtt((err, event) => { 
         if (err) return console.error(err);
         
-        // 🔥 FIX: event.type ar threadID check koro
-        if (sessions[token].scanning && event.type === "message" && event.threadID) {
-          // Group hole senderID ar threadID alada hobe
+        // 🔥 DEBUG LOG: Jodi kono event ashe, terminal e dekhabe
+        if (event && (event.body || event.threadID)) {
+          logMessage(`🔔 Event: type=${event.type} | threadID=${event.threadID} | senderID=${event.senderID} | body=${event.body || 'no-text'}`);
+        }
+
+        // 🔥 SCAN LOGIC: Jodi scan chalu thake, group ID collect korbe
+        if (sessions[token].scanning && event.threadID) {
+          // Group hole senderID ar threadID alada hoy
           if (event.threadID !== event.senderID) {
             if (!sessions[token].groups.includes(event.threadID)) {
               sessions[token].groups.push(event.threadID);
-              logMessage(`📌 [${token}] New Group ID: ${event.threadID}`);
+              logMessage(`📌 [${token}] New Group ID Captured: ${event.threadID}`);
             }
           }
         }
@@ -129,7 +134,7 @@ app.post("/scan-start", (req, res) => {
 
   sessions[token].scanning = true;
   sessions[token].groups = []; 
-  logMessage(`🔍 Scanning started for ${token}`);
+  logMessage(`🔍 Scanning started for ${token}. Sob group e ekta kore message patha!`);
   
   res.json({ success: true, message: "✅ Scan chalu! Ebar tomar group gulo te ekta kore message patha." });
 });
@@ -144,7 +149,7 @@ app.post("/scan-stop", (req, res) => {
   sessions[token].scanning = false;
   const commaSeparatedList = sessions[token].groups.join(",");
   
-  logMessage(`🛑 Scan stopped for ${token}. Total: ${sessions[token].groups.length}`);
+  logMessage(`🛑 Scan stopped for ${token}. Total groups found: ${sessions[token].groups.length}`);
   
   res.json({ 
     success: true, 
