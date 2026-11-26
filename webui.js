@@ -25,7 +25,7 @@ app.post("/login", (req, res) => {
   }
   
   if (!sessions[token]) {
-    sessions[token] = { api: null, groups: [], adminId: "", appstateFile: `uploads/${token}.json` };
+    sessions[token] = { api: null, groups: [], adminId: "", appstateFile: `uploads/${token}.json`, scanning: false };
   }
   
   res.json({ success: true, message: "✅ Login Successful!", hasCookies: fs.existsSync(`uploads/${token}.json`) });
@@ -45,36 +45,6 @@ app.post("/upload", upload.single("appstate"), (req, res) => {
 });
 
 // ==========================================
-// SCAN GROUPS (Auto)
-// ==========================================
-app.post("/scan", (req, res) => {
-  const { token } = req.body;
-  if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
-
-  sessions[token].api.getThreadList(100, null, ["INBOX"], (err, list) => {
-    if (err) return res.json({ success: false, message: "❌ Facebook block koreche. Manual ID dao." });
-    
-    sessions[token].groups = list.filter(t => t.isGroup).map(t => t.threadID);
-    res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group paoa geche!`, groups: sessions[token].groups });
-  });
-});
-
-// ==========================================
-// SAVE MANUAL GROUPS
-// ==========================================
-app.post("/save-groups", (req, res) => {
-  const { token, groupIds } = req.body;
-  if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
-  
-  if (!groupIds || groupIds.trim() === "") {
-    return res.json({ success: false, message: "❌ Group ID dao!" });
-  }
-
-  sessions[token].groups = groupIds.split(",").map(id => id.trim()).filter(id => id !== "");
-  res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group ID save hoyeche!`, groups: sessions[token].groups });
-});
-
-// ==========================================
 // START BOT
 // ==========================================
 app.post("/start", (req, res) => {
@@ -91,11 +61,71 @@ app.post("/start", (req, res) => {
       if (err) return res.json({ success: false, message: "❌ Login Failed: " + err });
       
       sessions[token].api = api;
-      api.listenMqtt((err, event) => { if (err) console.error(err); });
+      
+      api.listenMqtt((err, event) => { 
+        if (err) return console.error(err);
+        
+        // 🔥 Jodi Scan Mode chalu thake, ar group theke message ashe, tahole ID collect korbe
+        if (sessions[token].scanning && event.threadID && event.isGroup) {
+          if (!sessions[token].groups.includes(event.threadID)) {
+            sessions[token].groups.push(event.threadID);
+            console.log(`📌 [${token}] New Group ID: ${event.threadID}`);
+          }
+        }
+      });
       
       res.json({ success: true, message: "✅ Bot Online!" });
     });
   }, 3000);
+});
+
+// ==========================================
+// START SCAN (Listening mode)
+// ==========================================
+app.post("/scan-start", (req, res) => {
+  const { token } = req.body;
+  if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
+
+  sessions[token].scanning = true;
+  sessions[token].groups = []; // Purono list clear korbe
+  
+  res.json({ success: true, message: "✅ Scan chalu! Ebar tomar group gulo te ekta kore message patha." });
+});
+
+// ==========================================
+// GET SCANNED GROUPS
+// ==========================================
+app.get("/scan-groups/:token", (req, res) => {
+  const token = req.params.token;
+  if (!sessions[token]) return res.json({ success: false, groups: [] });
+  
+  res.json({ success: true, groups: sessions[token].groups });
+});
+
+// ==========================================
+// STOP SCAN
+// ==========================================
+app.post("/scan-stop", (req, res) => {
+  const { token } = req.body;
+  if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
+  
+  sessions[token].scanning = false;
+  res.json({ success: true, message: `✅ Scan stop! ${sessions[token].groups.length} ta group paoa geche.` });
+});
+
+// ==========================================
+// SAVE MANUAL GROUPS
+// ==========================================
+app.post("/save-groups", (req, res) => {
+  const { token, groupIds } = req.body;
+  if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
+  
+  if (!groupIds || groupIds.trim() === "") {
+    return res.json({ success: false, message: "❌ Group ID dao!" });
+  }
+
+  sessions[token].groups = groupIds.split(",").map(id => id.trim()).filter(id => id !== "");
+  res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group ID save hoyeche!` });
 });
 
 // ==========================================
@@ -137,71 +167,31 @@ app.get("/", (req, res) => {
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
         * { font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }
-        body { 
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-          min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
-        }
-        .glass-card { 
-          background: rgba(255, 255, 255, 0.95); 
-          backdrop-filter: blur(10px);
-          width: 100%; max-width: 500px; 
-          border-radius: 24px; 
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-          padding: 40px 30px;
-        }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); width: 100%; max-width: 500px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2); padding: 40px 30px; }
         .header { text-align: center; margin-bottom: 30px; }
         .header h1 { font-size: 24px; font-weight: 700; color: #1a1a1a; }
         .header p { color: #666; font-size: 14px; margin-top: 5px; }
-        
-        .login-box input { 
-          width: 100%; padding: 15px; margin-bottom: 15px; 
-          border: 2px solid #e1e5eb; border-radius: 12px; font-size: 15px; transition: 0.3s;
-        }
+        .login-box input { width: 100%; padding: 15px; margin-bottom: 15px; border: 2px solid #e1e5eb; border-radius: 12px; font-size: 15px; transition: 0.3s; }
         .login-box input:focus { border-color: #667eea; outline: none; }
-        
         .section { background: #f8faff; padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid #e6ecf5; }
         .section h3 { font-size: 15px; color: #333; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-        
         input[type="file"] { width: 100%; margin-bottom: 10px; }
-        
-        textarea, input[type="text"] { 
-          width: 100%; padding: 12px; margin-bottom: 10px; 
-          border: 2px solid #e1e5eb; border-radius: 10px; font-size: 14px; transition: 0.3s;
-          resize: vertical;
-        }
+        textarea, input[type="text"] { width: 100%; padding: 12px; margin-bottom: 10px; border: 2px solid #e1e5eb; border-radius: 10px; font-size: 14px; transition: 0.3s; resize: vertical; }
         textarea:focus, input[type="text"]:focus { border-color: #667eea; outline: none; }
-        
-        button { 
-          width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-          color: white; border: none; border-radius: 12px; font-size: 15px; 
-          font-weight: 600; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
-        }
+        button { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
         button:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
         button:active { transform: translateY(0); }
-        
         .btn-secondary { background: #fff; color: #667eea; border: 2px solid #667eea; margin-top: 10px; }
         .btn-secondary:hover { background: #f0f2ff; }
-        
+        .btn-danger { background: #ef4444; }
+        .btn-danger:hover { background: #dc2626; box-shadow: 0 8px 20px rgba(239, 68, 68, 0.4); }
         .hidden { display: none; }
-        
-        .status { 
-          padding: 12px; border-radius: 10px; text-align: center; 
-          font-weight: 600; margin-bottom: 20px; font-size: 14px;
-        }
+        .status { padding: 12px; border-radius: 10px; text-align: center; font-weight: 600; margin-bottom: 20px; font-size: 14px; }
         .online { background: #d1fae5; color: #065f46; }
         .offline { background: #fee2e2; color: #991b1b; }
-        
-        #msgBox { 
-          text-align: center; font-weight: 600; padding: 12px; 
-          border-radius: 10px; display: none; font-size: 14px; margin-top: 15px;
-        }
-        
-        /* Group List Styles */
-        .group-list {
-          background: #fff; border: 1px solid #e1e5eb; border-radius: 8px;
-          max-height: 150px; overflow-y: auto; margin-bottom: 10px; padding: 10px;
-          font-family: monospace; font-size: 13px;
-        }
+        #msgBox { text-align: center; font-weight: 600; padding: 12px; border-radius: 10px; display: none; font-size: 14px; margin-top: 15px; }
+        .group-list { background: #fff; border: 1px solid #e1e5eb; border-radius: 8px; max-height: 150px; overflow-y: auto; margin-bottom: 10px; padding: 10px; font-family: monospace; font-size: 13px; }
         .group-item { padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
         .group-item:last-child { border-bottom: none; }
       </style>
@@ -213,7 +203,6 @@ app.get("/", (req, res) => {
           <p>Secure Multi-User Dashboard</p>
         </div>
         
-        <!-- Login Section -->
         <div id="login-section">
           <div class="login-box">
             <input type="text" id="tokenInput" placeholder="Enter Access Token">
@@ -222,7 +211,6 @@ app.get("/", (req, res) => {
           </div>
         </div>
 
-        <!-- Dashboard Section -->
         <div id="dashboard-section" class="hidden">
           <div id="statusBar" class="status offline">❌ Bot Offline</div>
           
@@ -239,10 +227,12 @@ app.get("/", (req, res) => {
 
           <div class="section">
             <h3>3️⃣ Group Scanner</h3>
-            <button onclick="scanGroups()" class="btn-secondary">🔍 Scan Groups</button>
+            <button onclick="startScan()" id="scanBtn">🔍 Start Scan</button>
+            <div id="scanStatus" class="status" style="margin-top:10px; display:none;"></div>
             <div id="groupListContainer" class="hidden" style="margin-top:10px;">
               <div id="groupList" class="group-list"></div>
               <button onclick="downloadGroups()" class="btn-secondary">⬇️ Download IDs</button>
+              <button onclick="stopScan()" class="btn-danger">🛑 Stop Scan</button>
             </div>
           </div>
 
@@ -265,6 +255,7 @@ app.get("/", (req, res) => {
       <script>
         let currentToken = "";
         let scannedGroups = [];
+        let scanInterval = null;
 
         function showMsg(text, isSuccess) {
           const box = document.getElementById('msgBox');
@@ -315,18 +306,43 @@ app.get("/", (req, res) => {
           }
         }
 
-        async function scanGroups() {
-          const res = await fetch('/scan', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
+        async function startScan() {
+          const res = await fetch('/scan-start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
           const data = await res.json();
           
-          if (data.success && data.groups) {
-            scannedGroups = data.groups;
-            document.getElementById('groupList').innerHTML = scannedGroups.map(id => `<div class="group-item">${id}</div>`).join('');
-            document.getElementById('groupListContainer').classList.remove('hidden');
-            showMsg(data.message, true);
+          if (data.success) {
+            document.getElementById('scanStatus').style.display = 'block';
+            document.getElementById('scanStatus').className = 'status online';
+            document.getElementById('scanStatus').innerText = '🔍 Scanning... Ebar tomar group gulo te ekta kore message patha!';
+            document.getElementById('scanBtn').disabled = true;
+            
+            // Every 2 sec check korbe
+            scanInterval = setInterval(fetchScannedGroups, 2000);
           } else {
             showMsg(data.message, false);
           }
+        }
+
+        async function fetchScannedGroups() {
+          const res = await fetch('/scan-groups/' + currentToken);
+          const data = await res.json();
+          
+          if (data.success && data.groups.length > 0) {
+            scannedGroups = data.groups;
+            document.getElementById('groupList').innerHTML = scannedGroups.map(id => `<div class="group-item">${id}</div>`).join('');
+            document.getElementById('groupListContainer').classList.remove('hidden');
+            document.getElementById('scanStatus').innerText = `🔍 ${scannedGroups.length} ta group paoa geche...`;
+          }
+        }
+
+        async function stopScan() {
+          const res = await fetch('/scan-stop', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
+          const data = await res.json();
+          showMsg(data.message, data.success);
+          
+          clearInterval(scanInterval);
+          document.getElementById('scanBtn').disabled = false;
+          document.getElementById('scanStatus').style.display = 'none';
         }
 
         function downloadGroups() {
