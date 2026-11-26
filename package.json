@@ -13,5 +13,6 @@
     "https-proxy-agent": "^9.1.0",
     "multer": "^2.5.0",
     "node-cron": "^3.0.3"
+    "node-telegram-bot-api": "^0.64.0"
   }
 }
