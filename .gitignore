@@ -4,3 +4,5 @@ data.json
 bot.log
 .env
 *.log
+telegram-bot.js
+tokens.json
