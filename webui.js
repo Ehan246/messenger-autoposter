@@ -45,7 +45,22 @@ app.post("/upload", upload.single("appstate"), (req, res) => {
 });
 
 // ==========================================
-// SAVE GROUPS (Manual Input)
+// SCAN GROUPS (Auto)
+// ==========================================
+app.post("/scan", (req, res) => {
+  const { token } = req.body;
+  if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
+
+  sessions[token].api.getThreadList(100, null, ["INBOX"], (err, list) => {
+    if (err) return res.json({ success: false, message: "❌ Facebook block koreche. Manual ID dao." });
+    
+    sessions[token].groups = list.filter(t => t.isGroup).map(t => t.threadID);
+    res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group paoa geche!`, groups: sessions[token].groups });
+  });
+});
+
+// ==========================================
+// SAVE MANUAL GROUPS
 // ==========================================
 app.post("/save-groups", (req, res) => {
   const { token, groupIds } = req.body;
@@ -56,7 +71,7 @@ app.post("/save-groups", (req, res) => {
   }
 
   sessions[token].groups = groupIds.split(",").map(id => id.trim()).filter(id => id !== "");
-  res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group ID save hoyeche!` });
+  res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group ID save hoyeche!`, groups: sessions[token].groups });
 });
 
 // ==========================================
@@ -110,7 +125,7 @@ app.post("/post", (req, res) => {
 });
 
 // ==========================================
-// WEB UI (HTML) - MODERN DESIGN
+// WEB UI (HTML) - MODERN DESIGN with SCANNER
 // ==========================================
 app.get("/", (req, res) => {
   res.send(`
@@ -129,7 +144,7 @@ app.get("/", (req, res) => {
         .glass-card { 
           background: rgba(255, 255, 255, 0.95); 
           backdrop-filter: blur(10px);
-          width: 100%; max-width: 480px; 
+          width: 100%; max-width: 500px; 
           border-radius: 24px; 
           box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
           padding: 40px 30px;
@@ -138,14 +153,12 @@ app.get("/", (req, res) => {
         .header h1 { font-size: 24px; font-weight: 700; color: #1a1a1a; }
         .header p { color: #666; font-size: 14px; margin-top: 5px; }
         
-        /* Login Box */
         .login-box input { 
           width: 100%; padding: 15px; margin-bottom: 15px; 
           border: 2px solid #e1e5eb; border-radius: 12px; font-size: 15px; transition: 0.3s;
         }
         .login-box input:focus { border-color: #667eea; outline: none; }
         
-        /* Dashboard Sections */
         .section { background: #f8faff; padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid #e6ecf5; }
         .section h3 { font-size: 15px; color: #333; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
         
@@ -182,6 +195,15 @@ app.get("/", (req, res) => {
           text-align: center; font-weight: 600; padding: 12px; 
           border-radius: 10px; display: none; font-size: 14px; margin-top: 15px;
         }
+        
+        /* Group List Styles */
+        .group-list {
+          background: #fff; border: 1px solid #e1e5eb; border-radius: 8px;
+          max-height: 150px; overflow-y: auto; margin-bottom: 10px; padding: 10px;
+          font-family: monospace; font-size: 13px;
+        }
+        .group-item { padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+        .group-item:last-child { border-bottom: none; }
       </style>
     </head>
     <body>
@@ -216,13 +238,22 @@ app.get("/", (req, res) => {
           </div>
 
           <div class="section">
-            <h3>3️⃣ Group IDs</h3>
-            <input type="text" id="groupInput" placeholder="12345678,87654321">
-            <button onclick="saveGroups()" class="btn-secondary">💾 Save Group IDs</button>
+            <h3>3️⃣ Group Scanner</h3>
+            <button onclick="scanGroups()" class="btn-secondary">🔍 Scan Groups</button>
+            <div id="groupListContainer" class="hidden" style="margin-top:10px;">
+              <div id="groupList" class="group-list"></div>
+              <button onclick="downloadGroups()" class="btn-secondary">⬇️ Download IDs</button>
+            </div>
           </div>
 
           <div class="section">
-            <h3>4️⃣ Post Message</h3>
+            <h3>4️⃣ Manual Group IDs</h3>
+            <input type="text" id="groupInput" placeholder="Paste IDs here: 12345678, 87654321">
+            <button onclick="saveGroups()">💾 Save Group IDs</button>
+          </div>
+
+          <div class="section">
+            <h3>5️⃣ Post Message</h3>
             <textarea id="messageBox" placeholder="Type your message here..." rows="3"></textarea>
             <button onclick="postMsg()">📤 Post to All Groups</button>
           </div>
@@ -233,6 +264,7 @@ app.get("/", (req, res) => {
 
       <script>
         let currentToken = "";
+        let scannedGroups = [];
 
         function showMsg(text, isSuccess) {
           const box = document.getElementById('msgBox');
@@ -281,6 +313,30 @@ app.get("/", (req, res) => {
             document.getElementById('statusBar').innerText = '✅ Bot Online';
             document.getElementById('statusBar').className = 'status online';
           }
+        }
+
+        async function scanGroups() {
+          const res = await fetch('/scan', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
+          const data = await res.json();
+          
+          if (data.success && data.groups) {
+            scannedGroups = data.groups;
+            document.getElementById('groupList').innerHTML = scannedGroups.map(id => `<div class="group-item">${id}</div>`).join('');
+            document.getElementById('groupListContainer').classList.remove('hidden');
+            showMsg(data.message, true);
+          } else {
+            showMsg(data.message, false);
+          }
+        }
+
+        function downloadGroups() {
+          if(scannedGroups.length === 0) return;
+          const blob = new Blob([scannedGroups.join('\\n')], { type: 'text/plain' });
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'group_ids.txt';
+          a.click();
         }
 
         async function saveGroups() {
