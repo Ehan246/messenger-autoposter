@@ -65,8 +65,8 @@ app.post("/start", (req, res) => {
       api.listenMqtt((err, event) => { 
         if (err) return console.error(err);
         
-        // 🔥 Scan mode e thakle group ID collect korbe
-        if (sessions[token].scanning && event.threadID && event.isGroup) {
+        // 🔥 FIXED: event.type check koro, event.isGroup na
+        if (sessions[token].scanning && event.type === "message" && event.threadID) {
           if (!sessions[token].groups.includes(event.threadID)) {
             sessions[token].groups.push(event.threadID);
             console.log(`📌 [${token}] New Group ID: ${event.threadID}`);
