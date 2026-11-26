@@ -12,6 +12,36 @@ const upload = multer({ dest: "uploads/" });
 if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
 
 let sessions = {}; 
+let liveLogs = []; 
+
+// ==========================================
+// LOGGER FUNCTION
+// ==========================================
+function logMessage(msg) {
+  const time = new Date().toLocaleTimeString();
+  const fullMsg = `[${time}] ${msg}`;
+  console.log(fullMsg); 
+  liveLogs.push(fullMsg); 
+  if (liveLogs.length > 100) liveLogs.shift(); 
+}
+
+// ==========================================
+// LIVE TERMINAL (SSE)
+// ==========================================
+app.get("/live-logs", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  const interval = setInterval(() => {
+    if (liveLogs.length > 0) {
+      res.write(`data: ${JSON.stringify(liveLogs)}\n\n`);
+      liveLogs = []; 
+    }
+  }, 1000);
+
+  req.on("close", () => clearInterval(interval));
+});
 
 // ==========================================
 // LOGIN API
@@ -21,6 +51,7 @@ app.post("/login", (req, res) => {
   const validTokens = ["ehan123", "user456", "admin789"]; 
   
   if (!validTokens.includes(token)) {
+    logMessage("❌ Invalid Token attempt!");
     return res.json({ success: false, message: "❌ Invalid Token!" });
   }
   
@@ -28,6 +59,7 @@ app.post("/login", (req, res) => {
     sessions[token] = { api: null, groups: [], adminId: "", appstateFile: `uploads/${token}.json`, scanning: false };
   }
   
+  logMessage(`✅ Token login successful: ${token}`);
   res.json({ success: true, message: "✅ Login Successful!", hasCookies: fs.existsSync(`uploads/${token}.json`) });
 });
 
@@ -41,6 +73,7 @@ app.post("/upload", upload.single("appstate"), (req, res) => {
 
   fs.renameSync(req.file.path, `uploads/${token}.json`);
   sessions[token].appstateFile = `uploads/${token}.json`;
+  logMessage(`✅ Cookies uploaded for ${token}`);
   res.json({ success: true, message: "✅ Cookies Uploaded Successfully!" });
 });
 
@@ -54,22 +87,30 @@ app.post("/start", (req, res) => {
 
   if (sessions[token].api) return res.json({ success: true, message: "✅ Bot already online!" });
 
+  logMessage(`⏳ Bot starting for ${token}...`);
   const appState = JSON.parse(fs.readFileSync(sessions[token].appstateFile, "utf8"));
   
   setTimeout(() => {
     login({ appState }, (err, api) => {
-      if (err) return res.json({ success: false, message: "❌ Login Failed: " + err });
+      if (err) {
+        logMessage(`❌ Login Failed for ${token}: ${err}`);
+        return res.json({ success: false, message: "❌ Login Failed: " + err });
+      }
       
       sessions[token].api = api;
+      logMessage(`✅ Bot Online for ${token}!`);
       
       api.listenMqtt((err, event) => { 
         if (err) return console.error(err);
         
-        // 🔥 FIXED: event.type check koro, event.isGroup na
+        // 🔥 FIX: event.type ar threadID check koro
         if (sessions[token].scanning && event.type === "message" && event.threadID) {
-          if (!sessions[token].groups.includes(event.threadID)) {
-            sessions[token].groups.push(event.threadID);
-            console.log(`📌 [${token}] New Group ID: ${event.threadID}`);
+          // Group hole senderID ar threadID alada hobe
+          if (event.threadID !== event.senderID) {
+            if (!sessions[token].groups.includes(event.threadID)) {
+              sessions[token].groups.push(event.threadID);
+              logMessage(`📌 [${token}] New Group ID: ${event.threadID}`);
+            }
           }
         }
       });
@@ -87,22 +128,23 @@ app.post("/scan-start", (req, res) => {
   if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
 
   sessions[token].scanning = true;
-  sessions[token].groups = []; // Purono list clear
+  sessions[token].groups = []; 
+  logMessage(`🔍 Scanning started for ${token}`);
   
   res.json({ success: true, message: "✅ Scan chalu! Ebar tomar group gulo te ekta kore message patha." });
 });
 
 // ==========================================
-// STOP SCAN (Comma separated list return)
+// STOP SCAN
 // ==========================================
 app.post("/scan-stop", (req, res) => {
   const { token } = req.body;
   if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
   
   sessions[token].scanning = false;
-  
-  // Groups gulo ke comma diye join korbe (jemon: 123,456,789)
   const commaSeparatedList = sessions[token].groups.join(",");
+  
+  logMessage(`🛑 Scan stopped for ${token}. Total: ${sessions[token].groups.length}`);
   
   res.json({ 
     success: true, 
@@ -123,6 +165,7 @@ app.post("/save-groups", (req, res) => {
   }
 
   sessions[token].groups = groupIds.split(",").map(id => id.trim()).filter(id => id !== "");
+  logMessage(`💾 ${sessions[token].groups.length} groups saved for ${token}`);
   res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group ID save hoyeche!` });
 });
 
@@ -135,6 +178,8 @@ app.post("/post", (req, res) => {
   if (!message) return res.json({ success: false, message: "❌ Message khali!" });
   if (sessions[token].groups.length === 0) return res.json({ success: false, message: "❌ Age Group ID save kor!" });
 
+  logMessage(`📤 Posting message to ${sessions[token].groups.length} groups...`);
+  
   let count = 0;
   const groups = sessions[token].groups;
 
@@ -144,6 +189,7 @@ app.post("/post", (req, res) => {
         if (!e) count++;
         if (i === groups.length - 1) {
           setTimeout(() => {
+            logMessage(`✅ Posting done: ${count}/${groups.length} success.`);
             res.json({ success: true, message: `✅ ${count}/${groups.length} groups e post hoyeche!` });
           }, 1000);
         }
@@ -189,6 +235,8 @@ app.get("/", (req, res) => {
         .online { background: #d1fae5; color: #065f46; }
         .offline { background: #fee2e2; color: #991b1b; }
         #msgBox { text-align: center; font-weight: 600; padding: 12px; border-radius: 10px; display: none; font-size: 14px; margin-top: 15px; }
+        .terminal-box { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 10px; height: 150px; overflow-y: auto; margin-top: 15px; font-size: 13px; border: 2px solid #333; }
+        .terminal-line { margin-bottom: 5px; white-space: pre-wrap; word-break: break-all; }
       </style>
     </head>
     <body>
@@ -221,6 +269,11 @@ app.get("/", (req, res) => {
           </div>
 
           <div class="section">
+            <h3>📟 Live Terminal</h3>
+            <div id="terminal" class="terminal-box"></div>
+          </div>
+
+          <div class="section">
             <h3>3️⃣ Group Scanner</h3>
             <button onclick="startScan()" id="scanBtn">🔍 Start Scan</button>
             <button onclick="stopScan()" id="stopScanBtn" class="btn-danger hidden" style="margin-top:10px;">🛑 Stop Scan</button>
@@ -245,6 +298,25 @@ app.get("/", (req, res) => {
 
       <script>
         let currentToken = "";
+        let eventSource = null;
+
+        function setupTerminal() {
+          const terminal = document.getElementById('terminal');
+          terminal.innerHTML = '';
+          
+          eventSource = new EventSource('/live-logs');
+
+          eventSource.onmessage = function(event) {
+            const logs = JSON.parse(event.data);
+            logs.forEach(log => {
+              const div = document.createElement('div');
+              div.className = 'terminal-line';
+              div.innerText = log;
+              terminal.appendChild(div);
+            });
+            terminal.scrollTop = terminal.scrollHeight;
+          };
+        }
 
         function showMsg(text, isSuccess) {
           const box = document.getElementById('msgBox');
@@ -267,6 +339,7 @@ app.get("/", (req, res) => {
             document.getElementById('dashboard-section').classList.remove('hidden');
             document.getElementById('statusBar').innerText = '✅ Logged In Successfully';
             document.getElementById('statusBar').className = 'status online';
+            setupTerminal();
           } else {
             document.getElementById('loginMsg').innerText = data.message;
           }
@@ -319,8 +392,6 @@ app.get("/", (req, res) => {
             document.getElementById('scanBtn').classList.remove('hidden');
             document.getElementById('stopScanBtn').classList.add('hidden');
             document.getElementById('scanStatus').style.display = 'none';
-            
-            // 🔥 Auto fill the Manual Group ID box with comma separated list
             document.getElementById('groupInput').value = data.groupsList;
           } else {
             showMsg(data.message, false);
