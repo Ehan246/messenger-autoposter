@@ -2,12 +2,14 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const multer = require("multer");
 const fs = require("fs");
+const { HttpsProxyAgent } = require("https-proxy-agent");
 const login = require("@dongdev/fca-unofficial");
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
+// Upload setup
 const upload = multer({ dest: "uploads/" });
 if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
 
@@ -19,7 +21,6 @@ let sessions = {};
 // ==========================================
 app.post("/login", (req, res) => {
   const { token } = req.body;
-  
   // Ekhane nijer moto token boshate parbi
   const validTokens = ["ehan123", "user456", "admin789"]; 
   
@@ -28,27 +29,54 @@ app.post("/login", (req, res) => {
   }
   
   if (!sessions[token]) {
-    sessions[token] = { api: null, groups: [], adminId: "100024128466507", appstateFile: `uploads/${token}.json` };
+    sessions[token] = { api: null, groups: [], proxyList: [], appstateFile: `uploads/${token}.json` };
   }
   
-  res.json({ success: true, message: "✅ Login Successful!", hasCookies: fs.existsSync(`uploads/${token}.json`) });
+  res.json({ success: true, message: "✅ Login Successful!" });
 });
 
 // ==========================================
-// UPLOAD COOKIES
+// UPLOAD COOKIES & PROXY FILE
 // ==========================================
-app.post("/upload", upload.single("appstate"), (req, res) => {
+app.post("/upload", upload.fields([{ name: 'appstate', maxCount: 1 }, { name: 'proxyfile', maxCount: 1 }]), (req, res) => {
   const { token } = req.body;
   if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
-  if (!req.file) return res.json({ success: false, message: "File nai!" });
 
-  fs.renameSync(req.file.path, `uploads/${token}.json`);
-  sessions[token].appstateFile = `uploads/${token}.json`;
-  res.json({ success: true, message: "✅ Cookies Uploaded!" });
+  // Cookies save
+  if (req.files['appstate']) {
+    fs.renameSync(req.files['appstate'][0].path, `uploads/${token}.json`);
+    sessions[token].appstateFile = `uploads/${token}.json`;
+  }
+
+  // Proxy file parse koro (Smart Parser)
+  if (req.files['proxyfile']) {
+    const fileContent = fs.readFileSync(req.files['proxyfile'][0].path, "utf8");
+    
+    sessions[token].proxyList = fileContent.split("\n").map(line => {
+      line = line.trim();
+      if (!line) return null;
+      
+      const parts = line.split(":");
+      if (parts.length === 4) {
+        // Format: IP:PORT:USER:PASS
+        return `http://${parts[2]}:${parts[3]}@${parts[0]}:${parts[1]}`;
+      }
+      if (parts.length === 2) {
+        // Format: IP:PORT
+        return `http://${parts[0]}:${parts[1]}`;
+      }
+      // Jodi already http:// format e thake
+      return line;
+    }).filter(line => line !== null);
+    
+    console.log(`[${token}] Loaded ${sessions[token].proxyList.length} proxies.`);
+  }
+
+  res.json({ success: true, message: "✅ Cookies & Proxy File Uploaded!" });
 });
 
 // ==========================================
-// START BOT (With Delay & Error Handling)
+// START BOT (With Proxy Support)
 // ==========================================
 app.post("/start", (req, res) => {
   const { token } = req.body;
@@ -59,51 +87,53 @@ app.post("/start", (req, res) => {
 
   const appState = JSON.parse(fs.readFileSync(sessions[token].appstateFile, "utf8"));
   
-  console.log(`⏳ [${token}] Login attempt...`);
+  let loginOptions = { appState };
 
-  // Delay 5s
+  // Proxy add koro
+  if (sessions[token].proxyList.length > 0) {
+    const randomProxy = sessions[token].proxyList[Math.floor(Math.random() * sessions[token].proxyList.length)];
+    try {
+      loginOptions.agent = new HttpsProxyAgent(randomProxy);
+      console.log(`🌐 [${token}] Using proxy: ${randomProxy}`);
+    } catch (e) {
+      console.log(`❌ Proxy Error: ${e.message}`);
+    }
+  }
+
   setTimeout(() => {
-    login({ appState }, (err, api) => {
+    login(loginOptions, (err, api) => {
       if (err) {
-        console.error(`❌ [${token}] Login Failed:`, err);
+        console.error(`❌ [${token}] Login failed:`, err);
         return res.json({ success: false, message: "❌ Login Failed: " + err });
       }
       
       sessions[token].api = api;
       console.log(`✅ [${token}] Bot Online!`);
-      
-      api.listenMqtt((err, event) => {
-        if (err) console.error(`[${token}] MQTT Error:`, err);
-      });
+      api.listenMqtt((err, event) => { if (err) console.error(err); });
       
       res.json({ success: true, message: "✅ Bot Online!" });
     });
-  }, 5000); 
+  }, 3000);
 });
 
 // ==========================================
-// SCAN GROUPS (With Delay)
+// SCAN GROUPS
 // ==========================================
 app.post("/scan", (req, res) => {
   const { token } = req.body;
   if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
 
-  console.log(`⏳ [${token}] Scanning groups...`);
-  
-  // Delay 5s
   setTimeout(() => {
     sessions[token].api.getThreadList(100, null, ["INBOX"], (err, list) => {
       if (err) {
-        console.error(`❌ [${token}] Scan failed:`, err);
-        return res.json({ success: false, message: "❌ Facebook block koreche. 10 min wait kore try kor." });
+        console.error(`[${token}] Scan Error:`, err);
+        return res.json({ success: false, message: "❌ Facebook block koreche. Notun proxy file upload kor." });
       }
       
       sessions[token].groups = list.filter(t => t.isGroup).map(t => t.threadID);
-      console.log(`✅ [${token}] ${sessions[token].groups.length} groups found.`);
-      
       res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group paoa geche!` });
     });
-  }, 5000);
+  }, 3000);
 });
 
 // ==========================================
@@ -133,17 +163,6 @@ app.post("/post", (req, res) => {
 });
 
 // ==========================================
-// CHANGE ADMIN ID
-// ==========================================
-app.post("/admin", (req, res) => {
-  const { token, adminId } = req.body;
-  if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
-  
-  sessions[token].adminId = adminId;
-  res.json({ success: true, message: "✅ Admin ID updated!" });
-});
-
-// ==========================================
 // WEB UI (HTML)
 // ==========================================
 app.get("/", (req, res) => {
@@ -165,13 +184,13 @@ app.get("/", (req, res) => {
         .status { padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 10px; font-weight: bold; }
         .online { background: #d4edda; color: #155724; }
         .offline { background: #f8d7da; color: #721c24; }
+        .box label { font-weight: bold; font-size: 14px; display: block; margin-top: 10px; }
       </style>
     </head>
     <body>
       <div class="box">
         <h1>🤖 Multi-User Bot</h1>
         
-        <!-- Login Section -->
         <div id="login-section">
           <h3>Login with Token</h3>
           <input type="text" id="tokenInput" placeholder="Enter Token (ehan123)">
@@ -179,13 +198,16 @@ app.get("/", (req, res) => {
           <p id="loginMsg"></p>
         </div>
 
-        <!-- Dashboard Section -->
         <div id="dashboard-section" class="hidden">
           <div id="statusBar" class="status offline">❌ Bot Offline</div>
           
-          <h3>1. Upload Cookies (appstate.json)</h3>
+          <h3>1. Upload Files</h3>
+          <label>Cookies (appstate.json):</label>
           <input type="file" id="cookieFile" accept=".json">
-          <button onclick="uploadCookie()">Upload</button>
+
+          <label>Proxy List (proxy.txt):</label>
+          <input type="file" id="proxyFile" accept=".txt">
+          <button onclick="uploadFiles()">Upload Both</button>
           
           <h3>2. Bot Control</h3>
           <button onclick="startBot()">Start Bot</button>
@@ -194,10 +216,6 @@ app.get("/", (req, res) => {
           <h3>3. Post Message</h3>
           <textarea id="messageBox" placeholder="Type message..."></textarea>
           <button onclick="postMsg()">Post to All Groups</button>
-          
-          <h3>4. Change Admin ID</h3>
-          <input type="text" id="adminInput" placeholder="Enter Admin ID">
-          <button onclick="changeAdmin()">Save Admin</button>
 
           <p id="msgBox" style="color:green; font-weight:bold;"></p>
         </div>
@@ -222,12 +240,15 @@ app.get("/", (req, res) => {
           }
         }
 
-        async function uploadCookie() {
-          const file = document.getElementById('cookieFile').files[0];
-          if(!file) return alert('File select kor!');
+        async function uploadFiles() {
+          const cookieFile = document.getElementById('cookieFile').files[0];
+          const proxyFile = document.getElementById('proxyFile').files[0];
+          
+          if(!cookieFile && !proxyFile) return alert('File select kor!');
           
           const formData = new FormData();
-          formData.append('appstate', file);
+          if(cookieFile) formData.append('appstate', cookieFile);
+          if(proxyFile) formData.append('proxyfile', proxyFile);
           formData.append('token', currentToken);
           
           const res = await fetch('/upload', { method: 'POST', body: formData });
@@ -254,13 +275,6 @@ app.get("/", (req, res) => {
         async function postMsg() {
           const msg = document.getElementById('messageBox').value;
           const res = await fetch('/post', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken, message: msg}) });
-          const data = await res.json();
-          document.getElementById('msgBox').innerText = data.message;
-        }
-
-        async function changeAdmin() {
-          const adminId = document.getElementById('adminInput').value;
-          const res = await fetch('/admin', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken, adminId}) });
           const data = await res.json();
           document.getElementById('msgBox').innerText = data.message;
         }
