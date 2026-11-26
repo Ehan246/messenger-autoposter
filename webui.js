@@ -11,16 +11,13 @@ app.use(bodyParser.json());
 const upload = multer({ dest: "uploads/" });
 if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
 
-// Session Store
 let sessions = {}; 
 
 // ==========================================
-// LOGIN API (Token check)
+// LOGIN API
 // ==========================================
 app.post("/login", (req, res) => {
   const { token } = req.body;
-  
-  // Ekhane nijer moto token boshate parbi
   const validTokens = ["ehan123", "user456", "admin789"]; 
   
   if (!validTokens.includes(token)) {
@@ -28,7 +25,7 @@ app.post("/login", (req, res) => {
   }
   
   if (!sessions[token]) {
-    sessions[token] = { api: null, groups: [], adminId: "100024128466507", appstateFile: `uploads/${token}.json` };
+    sessions[token] = { api: null, groups: [], adminId: "", appstateFile: `uploads/${token}.json` };
   }
   
   res.json({ success: true, message: "✅ Login Successful!", hasCookies: fs.existsSync(`uploads/${token}.json`) });
@@ -44,11 +41,26 @@ app.post("/upload", upload.single("appstate"), (req, res) => {
 
   fs.renameSync(req.file.path, `uploads/${token}.json`);
   sessions[token].appstateFile = `uploads/${token}.json`;
-  res.json({ success: true, message: "✅ Cookies Uploaded!" });
+  res.json({ success: true, message: "✅ Cookies Uploaded Successfully!" });
 });
 
 // ==========================================
-// START BOT (With Delay & Error Handling)
+// SAVE GROUPS (Manual Input)
+// ==========================================
+app.post("/save-groups", (req, res) => {
+  const { token, groupIds } = req.body;
+  if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
+  
+  if (!groupIds || groupIds.trim() === "") {
+    return res.json({ success: false, message: "❌ Group ID dao!" });
+  }
+
+  sessions[token].groups = groupIds.split(",").map(id => id.trim()).filter(id => id !== "");
+  res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group ID save hoyeche!` });
+});
+
+// ==========================================
+// START BOT
 // ==========================================
 app.post("/start", (req, res) => {
   const { token } = req.body;
@@ -59,51 +71,16 @@ app.post("/start", (req, res) => {
 
   const appState = JSON.parse(fs.readFileSync(sessions[token].appstateFile, "utf8"));
   
-  console.log(`⏳ [${token}] Login attempt...`);
-
-  // Delay 5s
   setTimeout(() => {
     login({ appState }, (err, api) => {
-      if (err) {
-        console.error(`❌ [${token}] Login Failed:`, err);
-        return res.json({ success: false, message: "❌ Login Failed: " + err });
-      }
+      if (err) return res.json({ success: false, message: "❌ Login Failed: " + err });
       
       sessions[token].api = api;
-      console.log(`✅ [${token}] Bot Online!`);
-      
-      api.listenMqtt((err, event) => {
-        if (err) console.error(`[${token}] MQTT Error:`, err);
-      });
+      api.listenMqtt((err, event) => { if (err) console.error(err); });
       
       res.json({ success: true, message: "✅ Bot Online!" });
     });
-  }, 5000); 
-});
-
-// ==========================================
-// SCAN GROUPS (With Delay)
-// ==========================================
-app.post("/scan", (req, res) => {
-  const { token } = req.body;
-  if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
-
-  console.log(`⏳ [${token}] Scanning groups...`);
-  
-  // Delay 5s
-  setTimeout(() => {
-    sessions[token].api.getThreadList(100, null, ["INBOX"], (err, list) => {
-      if (err) {
-        console.error(`❌ [${token}] Scan failed:`, err);
-        return res.json({ success: false, message: "❌ Facebook block koreche. 10 min wait kore try kor." });
-      }
-      
-      sessions[token].groups = list.filter(t => t.isGroup).map(t => t.threadID);
-      console.log(`✅ [${token}] ${sessions[token].groups.length} groups found.`);
-      
-      res.json({ success: true, message: `✅ ${sessions[token].groups.length} ta group paoa geche!` });
-    });
-  }, 5000);
+  }, 3000);
 });
 
 // ==========================================
@@ -113,7 +90,7 @@ app.post("/post", (req, res) => {
   const { token, message } = req.body;
   if (!sessions[token] || !sessions[token].api) return res.json({ success: false, message: "❌ Bot offline!" });
   if (!message) return res.json({ success: false, message: "❌ Message khali!" });
-  if (sessions[token].groups.length === 0) return res.json({ success: false, message: "❌ Age scan kor!" });
+  if (sessions[token].groups.length === 0) return res.json({ success: false, message: "❌ Age Group ID save kor!" });
 
   let count = 0;
   const groups = sessions[token].groups;
@@ -133,81 +110,142 @@ app.post("/post", (req, res) => {
 });
 
 // ==========================================
-// CHANGE ADMIN ID
-// ==========================================
-app.post("/admin", (req, res) => {
-  const { token, adminId } = req.body;
-  if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
-  
-  sessions[token].adminId = adminId;
-  res.json({ success: true, message: "✅ Admin ID updated!" });
-});
-
-// ==========================================
-// WEB UI (HTML)
+// WEB UI (HTML) - MODERN DESIGN
 // ==========================================
 app.get("/", (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Multi-User Bot Dashboard</title>
+      <title>Messenger Bot Dashboard</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
-        * { font-family: Arial; box-sizing: border-box; }
-        body { background: #f0f2f5; padding: 20px; display: flex; justify-content: center; }
-        .box { background: #fff; max-width: 500px; width: 100%; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        h1 { color: #1877f2; text-align: center; }
-        input, textarea, button { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; }
-        button { background: #1877f2; color: white; border: none; font-weight: bold; cursor: pointer; }
-        button:hover { background: #0f5bbf; }
+        * { font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+          min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+        }
+        .glass-card { 
+          background: rgba(255, 255, 255, 0.95); 
+          backdrop-filter: blur(10px);
+          width: 100%; max-width: 480px; 
+          border-radius: 24px; 
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+          padding: 40px 30px;
+        }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h1 { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .header p { color: #666; font-size: 14px; margin-top: 5px; }
+        
+        /* Login Box */
+        .login-box input { 
+          width: 100%; padding: 15px; margin-bottom: 15px; 
+          border: 2px solid #e1e5eb; border-radius: 12px; font-size: 15px; transition: 0.3s;
+        }
+        .login-box input:focus { border-color: #667eea; outline: none; }
+        
+        /* Dashboard Sections */
+        .section { background: #f8faff; padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid #e6ecf5; }
+        .section h3 { font-size: 15px; color: #333; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        
+        input[type="file"] { width: 100%; margin-bottom: 10px; }
+        
+        textarea, input[type="text"] { 
+          width: 100%; padding: 12px; margin-bottom: 10px; 
+          border: 2px solid #e1e5eb; border-radius: 10px; font-size: 14px; transition: 0.3s;
+          resize: vertical;
+        }
+        textarea:focus, input[type="text"]:focus { border-color: #667eea; outline: none; }
+        
+        button { 
+          width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+          color: white; border: none; border-radius: 12px; font-size: 15px; 
+          font-weight: 600; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
+        button:active { transform: translateY(0); }
+        
+        .btn-secondary { background: #fff; color: #667eea; border: 2px solid #667eea; margin-top: 10px; }
+        .btn-secondary:hover { background: #f0f2ff; }
+        
         .hidden { display: none; }
-        .status { padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 10px; font-weight: bold; }
-        .online { background: #d4edda; color: #155724; }
-        .offline { background: #f8d7da; color: #721c24; }
+        
+        .status { 
+          padding: 12px; border-radius: 10px; text-align: center; 
+          font-weight: 600; margin-bottom: 20px; font-size: 14px;
+        }
+        .online { background: #d1fae5; color: #065f46; }
+        .offline { background: #fee2e2; color: #991b1b; }
+        
+        #msgBox { 
+          text-align: center; font-weight: 600; padding: 12px; 
+          border-radius: 10px; display: none; font-size: 14px; margin-top: 15px;
+        }
       </style>
     </head>
     <body>
-      <div class="box">
-        <h1>🤖 Multi-User Bot</h1>
+      <div class="glass-card">
+        <div class="header">
+          <h1>🤖 Messenger Bot</h1>
+          <p>Secure Multi-User Dashboard</p>
+        </div>
         
         <!-- Login Section -->
         <div id="login-section">
-          <h3>Login with Token</h3>
-          <input type="text" id="tokenInput" placeholder="Enter Token (ehan123)">
-          <button onclick="login()">Login</button>
-          <p id="loginMsg"></p>
+          <div class="login-box">
+            <input type="text" id="tokenInput" placeholder="Enter Access Token">
+            <button onclick="login()">Login</button>
+            <p id="loginMsg" style="color:red; text-align:center; margin-top:10px; font-size:14px;"></p>
+          </div>
         </div>
 
         <!-- Dashboard Section -->
         <div id="dashboard-section" class="hidden">
           <div id="statusBar" class="status offline">❌ Bot Offline</div>
           
-          <h3>1. Upload Cookies (appstate.json)</h3>
-          <input type="file" id="cookieFile" accept=".json">
-          <button onclick="uploadCookie()">Upload</button>
+          <div class="section">
+            <h3>1️⃣ Upload Cookies</h3>
+            <input type="file" id="cookieFile" accept=".json">
+            <button onclick="uploadCookie()">Upload appstate.json</button>
+          </div>
           
-          <h3>2. Bot Control</h3>
-          <button onclick="startBot()">Start Bot</button>
-          <button onclick="scanGroups()">Scan Groups</button>
+          <div class="section">
+            <h3>2️⃣ Bot Control</h3>
+            <button onclick="startBot()">🚀 Start Bot</button>
+          </div>
 
-          <h3>3. Post Message</h3>
-          <textarea id="messageBox" placeholder="Type message..."></textarea>
-          <button onclick="postMsg()">Post to All Groups</button>
-          
-          <h3>4. Change Admin ID</h3>
-          <input type="text" id="adminInput" placeholder="Enter Admin ID">
-          <button onclick="changeAdmin()">Save Admin</button>
+          <div class="section">
+            <h3>3️⃣ Group IDs</h3>
+            <input type="text" id="groupInput" placeholder="12345678,87654321">
+            <button onclick="saveGroups()" class="btn-secondary">💾 Save Group IDs</button>
+          </div>
 
-          <p id="msgBox" style="color:green; font-weight:bold;"></p>
+          <div class="section">
+            <h3>4️⃣ Post Message</h3>
+            <textarea id="messageBox" placeholder="Type your message here..." rows="3"></textarea>
+            <button onclick="postMsg()">📤 Post to All Groups</button>
+          </div>
+
+          <div id="msgBox"></div>
         </div>
       </div>
 
       <script>
         let currentToken = "";
 
+        function showMsg(text, isSuccess) {
+          const box = document.getElementById('msgBox');
+          box.style.display = 'block';
+          box.style.background = isSuccess ? '#d1fae5' : '#fee2e2';
+          box.style.color = isSuccess ? '#065f46' : '#991b1b';
+          box.innerText = text;
+        }
+
         async function login() {
           const token = document.getElementById('tokenInput').value;
+          if(!token) return alert('Token dao!');
+          
           const res = await fetch('/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token}) });
           const data = await res.json();
           
@@ -215,7 +253,7 @@ app.get("/", (req, res) => {
             currentToken = token;
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('dashboard-section').classList.remove('hidden');
-            document.getElementById('statusBar').innerText = '✅ Logged In';
+            document.getElementById('statusBar').innerText = '✅ Logged In Successfully';
             document.getElementById('statusBar').className = 'status online';
           } else {
             document.getElementById('loginMsg').innerText = data.message;
@@ -232,37 +270,34 @@ app.get("/", (req, res) => {
           
           const res = await fetch('/upload', { method: 'POST', body: formData });
           const data = await res.json();
-          document.getElementById('msgBox').innerText = data.message;
+          showMsg(data.message, data.success);
         }
 
         async function startBot() {
           const res = await fetch('/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
           const data = await res.json();
-          document.getElementById('msgBox').innerText = data.message;
+          showMsg(data.message, data.success);
           if (data.success) {
             document.getElementById('statusBar').innerText = '✅ Bot Online';
             document.getElementById('statusBar').className = 'status online';
           }
         }
 
-        async function scanGroups() {
-          const res = await fetch('/scan', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
+        async function saveGroups() {
+          const groupIds = document.getElementById('groupInput').value;
+          const res = await fetch('/save-groups', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken, groupIds}) });
           const data = await res.json();
-          document.getElementById('msgBox').innerText = data.message;
+          showMsg(data.message, data.success);
         }
 
         async function postMsg() {
           const msg = document.getElementById('messageBox').value;
+          if(!msg) return alert('Message likho!');
+          
           const res = await fetch('/post', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken, message: msg}) });
           const data = await res.json();
-          document.getElementById('msgBox').innerText = data.message;
-        }
-
-        async function changeAdmin() {
-          const adminId = document.getElementById('adminInput').value;
-          const res = await fetch('/admin', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken, adminId}) });
-          const data = await res.json();
-          document.getElementById('msgBox').innerText = data.message;
+          showMsg(data.message, data.success);
+          if (data.success) document.getElementById('messageBox').value = '';
         }
       </script>
     </body>
