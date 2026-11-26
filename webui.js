@@ -65,7 +65,7 @@ app.post("/start", (req, res) => {
       api.listenMqtt((err, event) => { 
         if (err) return console.error(err);
         
-        // 🔥 Scan mode e thakle message theke group ID collect korbe
+        // 🔥 Scan mode e thakle group ID collect korbe
         if (sessions[token].scanning && event.threadID && event.isGroup) {
           if (!sessions[token].groups.includes(event.threadID)) {
             sessions[token].groups.push(event.threadID);
@@ -93,24 +93,22 @@ app.post("/scan-start", (req, res) => {
 });
 
 // ==========================================
-// GET SCANNED GROUPS
-// ==========================================
-app.get("/scan-groups/:token", (req, res) => {
-  const token = req.params.token;
-  if (!sessions[token]) return res.json({ success: false, groups: [] });
-  
-  res.json({ success: true, groups: sessions[token].groups });
-});
-
-// ==========================================
-// STOP SCAN
+// STOP SCAN (Comma separated list return)
 // ==========================================
 app.post("/scan-stop", (req, res) => {
   const { token } = req.body;
   if (!sessions[token]) return res.json({ success: false, message: "Age login kor!" });
   
   sessions[token].scanning = false;
-  res.json({ success: true, message: `✅ Scan stop! ${sessions[token].groups.length} ta group paoa geche.` });
+  
+  // Groups gulo ke comma diye join korbe (jemon: 123,456,789)
+  const commaSeparatedList = sessions[token].groups.join(",");
+  
+  res.json({ 
+    success: true, 
+    message: `✅ Scan stop! ${sessions[token].groups.length} ta group paoa geche.`,
+    groupsList: commaSeparatedList 
+  });
 });
 
 // ==========================================
@@ -191,9 +189,6 @@ app.get("/", (req, res) => {
         .online { background: #d1fae5; color: #065f46; }
         .offline { background: #fee2e2; color: #991b1b; }
         #msgBox { text-align: center; font-weight: 600; padding: 12px; border-radius: 10px; display: none; font-size: 14px; margin-top: 15px; }
-        .group-list { background: #fff; border: 1px solid #e1e5eb; border-radius: 8px; max-height: 150px; overflow-y: auto; margin-bottom: 10px; padding: 10px; font-family: monospace; font-size: 13px; }
-        .group-item { padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
-        .group-item:last-child { border-bottom: none; }
       </style>
     </head>
     <body>
@@ -228,16 +223,12 @@ app.get("/", (req, res) => {
           <div class="section">
             <h3>3️⃣ Group Scanner</h3>
             <button onclick="startScan()" id="scanBtn">🔍 Start Scan</button>
+            <button onclick="stopScan()" id="stopScanBtn" class="btn-danger hidden" style="margin-top:10px;">🛑 Stop Scan</button>
             <div id="scanStatus" class="status" style="margin-top:10px; display:none;"></div>
-            <div id="groupListContainer" class="hidden" style="margin-top:10px;">
-              <div id="groupList" class="group-list"></div>
-              <button onclick="downloadGroups()" class="btn-secondary">⬇️ Download IDs</button>
-              <button onclick="stopScan()" class="btn-danger">🛑 Stop Scan</button>
-            </div>
           </div>
 
           <div class="section">
-            <h3>4️⃣ Manual Group IDs</h3>
+            <h3>4️⃣ Manual Group IDs (Auto fills after scan)</h3>
             <input type="text" id="groupInput" placeholder="Paste IDs here: 12345678, 87654321">
             <button onclick="saveGroups()">💾 Save Group IDs</button>
           </div>
@@ -254,8 +245,6 @@ app.get("/", (req, res) => {
 
       <script>
         let currentToken = "";
-        let scannedGroups = [];
-        let scanInterval = null;
 
         function showMsg(text, isSuccess) {
           const box = document.getElementById('msgBox');
@@ -314,48 +303,28 @@ app.get("/", (req, res) => {
             document.getElementById('scanStatus').style.display = 'block';
             document.getElementById('scanStatus').className = 'status online';
             document.getElementById('scanStatus').innerText = '🔍 Scanning... Ebar tomar group gulo te ekta kore message patha!';
-            document.getElementById('scanBtn').disabled = true;
-            
-            scanInterval = setInterval(fetchScannedGroups, 2000);
+            document.getElementById('scanBtn').classList.add('hidden');
+            document.getElementById('stopScanBtn').classList.remove('hidden');
           } else {
             showMsg(data.message, false);
-          }
-        }
-
-        async function fetchScannedGroups() {
-          const res = await fetch('/scan-groups/' + currentToken);
-          const data = await res.json();
-          
-          if (data.success && data.groups.length > 0) {
-            scannedGroups = data.groups;
-            let html = '';
-            for (let i = 0; i < scannedGroups.length; i++) {
-              html += '<div class="group-item">' + scannedGroups[i] + '</div>';
-            }
-            document.getElementById('groupList').innerHTML = html;
-            document.getElementById('groupListContainer').classList.remove('hidden');
-            document.getElementById('scanStatus').innerText = '🔍 ' + scannedGroups.length + ' ta group paoa geche...';
           }
         }
 
         async function stopScan() {
           const res = await fetch('/scan-stop', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: currentToken}) });
           const data = await res.json();
-          showMsg(data.message, data.success);
           
-          clearInterval(scanInterval);
-          document.getElementById('scanBtn').disabled = false;
-          document.getElementById('scanStatus').style.display = 'none';
-        }
-
-        function downloadGroups() {
-          if(scannedGroups.length === 0) return;
-          const blob = new Blob([scannedGroups.join('\\n')], { type: 'text/plain' });
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'group_ids.txt';
-          a.click();
+          if (data.success) {
+            showMsg(data.message, true);
+            document.getElementById('scanBtn').classList.remove('hidden');
+            document.getElementById('stopScanBtn').classList.add('hidden');
+            document.getElementById('scanStatus').style.display = 'none';
+            
+            // 🔥 Auto fill the Manual Group ID box with comma separated list
+            document.getElementById('groupInput').value = data.groupsList;
+          } else {
+            showMsg(data.message, false);
+          }
         }
 
         async function saveGroups() {
