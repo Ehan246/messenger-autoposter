@@ -8,9 +8,23 @@
   "dependencies": {
     "@dongdev/fca-unofficial": "^4.0.3",
     "body-parser": "^1.20.2",
+    "dotenv": "^18.0.10",
     "express": "^4.18.2",
     "mongoose": "^8.24.11",
     "multer": "^1.4.5-lts.1",
     "node-telegram-bot-api": "^2.5.0"
-  }
+  },
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ehan246/messenger-autoposter.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Ehan246/messenger-autoposter/issues"
+  },
+  "homepage": "https://github.com/Ehan246/messenger-autoposter#readme"
 }
