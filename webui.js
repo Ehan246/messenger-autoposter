@@ -2,7 +2,11 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const multer = require("multer");
 const fs = require("fs");
+const mongoose = require("mongoose");
 const login = require("@dongdev/fca-unofficial");
+
+// 🔥 Apnar MongoDB Connection String ekhane din
+const MONGO_URI = 'mongodb+srv://gamerehan65_db_user:QlhgqsCvdc1TBTel@messengerbot.rwt58x0.mongodb.net/?retryWrites=true&w=majority';
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -13,6 +17,21 @@ if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
 
 let sessions = {}; 
 let liveLogs = []; 
+
+// ==========================================
+// MONGODB CONNECTION
+// ==========================================
+mongoose.connect(MONGO_URI)
+  .then(() => console.log("✅ MongoDB Connected!"))
+  .catch(err => console.error("❌ MongoDB Error:", err));
+
+// Token Schema
+const TokenSchema = new mongoose.Schema({
+  token: { type: String, required: true, unique: true },
+  active: { type: Boolean, default: true },
+  created: { type: Date, default: Date.now }
+});
+const Token = mongoose.model('Token', TokenSchema);
 
 // ==========================================
 // LOGGER
@@ -42,31 +61,29 @@ app.get("/live-logs", (req, res) => {
 });
 
 // ==========================================
-// LOGIN API (Token Check from tokens.json)
+// LOGIN API (MongoDB Token Check)
 // ==========================================
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { token } = req.body;
   
-  let tokens = {};
-  if (fs.existsSync('tokens.json')) {
-    try {
-      tokens = JSON.parse(fs.readFileSync('tokens.json', 'utf8'));
-    } catch (e) {
-      return res.json({ success: false, message: "❌ Token database error!" });
+  try {
+    const tokenDoc = await Token.findOne({ token: token, active: true });
+    
+    if (!tokenDoc) {
+      logMessage(`❌ Invalid/Expired Token attempt: ${token}`);
+      return res.json({ success: false, message: "❌ Token ti expire hoye geche ba invalid!" });
     }
+    
+    if (!sessions[token]) {
+      sessions[token] = { api: null, groups: [], adminId: "", appstateFile: `uploads/${token}.json` };
+    }
+    
+    logMessage(`✅ Token login successful: ${token}`);
+    res.json({ success: true, message: "✅ Login Successful!", hasCookies: fs.existsSync(`uploads/${token}.json`) });
+  } catch (e) {
+    logMessage(`❌ DB Error: ${e.message}`);
+    res.json({ success: false, message: "❌ Database error!" });
   }
-  
-  if (!tokens[token] || tokens[token].active === false) {
-    logMessage(`❌ Invalid/Expired Token attempt: ${token}`);
-    return res.json({ success: false, message: "❌ Token ti expire hoye geche ba invalid!" });
-  }
-  
-  if (!sessions[token]) {
-    sessions[token] = { api: null, groups: [], adminId: "", appstateFile: `uploads/${token}.json` };
-  }
-  
-  logMessage(`✅ Token login successful: ${token}`);
-  res.json({ success: true, message: "✅ Login Successful!", hasCookies: fs.existsSync(`uploads/${token}.json`) });
 });
 
 // ==========================================
