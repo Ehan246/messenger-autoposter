@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Login - Token Auth</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: Arial; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+    .box { background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+    h2 { text-align: center; color: #333; }
+    input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+    button { width: 100%; padding: 12px; background: #1877f2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #0f5bbf; }
+    p { text-align: center; color: red; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Login</h2>
+    <input type="email" id="email" placeholder="Email">
+    <input type="password" id="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+    <p id="msg"></p>
+  </div>
+
+  <script>
+    async function login() {
+      const data = {
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value
+      };
+
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const result = await res.json();
+      
+      if (result.success) {
+        // Token ta localStorage e save koro
+        localStorage.setItem('jwtToken', result.token);
+        localStorage.setItem('username', result.username);
+        alert("Login Successful! Dashboard e niye jacche...");
+        window.location.href = '/dashboard.html'; // Porer step e dashboard banabo
+      } else {
+        document.getElementById('msg').innerText = result.message;
+      }
+    }
+  </script>
+</body>
+</html>
