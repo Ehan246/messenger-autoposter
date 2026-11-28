@@ -1,9 +1,5 @@
 node_modules/
+.env
 appstate.json
-data.json
-bot.log
-.env
+uploads/
 *.log
-telegram-bot.js
-tokens.json
-.env
