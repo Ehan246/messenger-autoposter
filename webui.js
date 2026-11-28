@@ -8,11 +8,12 @@ const jwt = require("jsonwebtoken");
 const login = require("@dongdev/fca-unofficial");
 
 // MongoDB Connection
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://gamerehan65_db_user:QlhgqsCvdc1TBTel@messengerbot.rwt58x0.mongodb.net/?retryWrites=true&w=majority';
+const MONGO_URI = process.env.MONGO_URI;
 mongoose.connect(MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected!"))
   .catch(err => console.error("❌ MongoDB Error:", err));
 
+// Models (models folder er vitore)
 const User = require("./models/User");
 const Token = require("./models/Token");
 
@@ -39,7 +40,7 @@ function logMessage(msg) {
 }
 
 // ==========================================
-// AUTHENTICATION MIDDLEWARE (JWT Verify)
+// AUTH MIDDLEWARE
 // ==========================================
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -49,7 +50,7 @@ function authMiddleware(req, res, next) {
   const token = authHeader.split(" ")[1];
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
-    req.user = decoded; // req.user e userId ar username thakbe
+    req.user = decoded;
     next();
   } catch (err) {
     res.status(401).json({ success: false, message: "❌ Invalid or expired token!" });
@@ -57,32 +58,54 @@ function authMiddleware(req, res, next) {
 }
 
 // ==========================================
-// SIGNUP API
+// ROUTES: REDIRECT (Main link e gele signup e jabe)
+// ==========================================
+app.get("/", (req, res) => {
+  res.redirect("/signup.html");
+});
+
+// ==========================================
+// SIGNUP API (Telegram Username soho)
 // ==========================================
 app.post('/api/signup', async (req, res) => {
-  const { username, email, password, token } = req.body;
+  const { username, email, password, token, telegramUsername } = req.body;
+  
   if (!username || !email || !password || !token) {
     return res.status(400).json({ success: false, message: "Sob field puron koren!" });
   }
+
   try {
     const existingUser = await User.findOne({ $or: [{ email }, { username }] });
     if (existingUser) {
       return res.status(400).json({ success: false, message: "Username ba Email already exists!" });
     }
+
     const tokenDoc = await Token.findOneAndUpdate(
       { token: token, isUsed: false, active: true },
       { $set: { isUsed: true } },
       { new: true, returnDocument: 'after' }
     );
+
     if (!tokenDoc) {
       return res.status(400).json({ success: false, message: "❌ Ei token ti already used ba invalid!" });
     }
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ username, email, password: hashedPassword, tokenId: tokenDoc._id });
+
+    const newUser = new User({
+      username,
+      email,
+      password: hashedPassword,
+      tokenId: tokenDoc._id,
+      telegramUsername: telegramUsername || null // Optional
+    });
     await newUser.save();
+
     tokenDoc.usedBy = newUser._id;
     await tokenDoc.save();
+
     res.json({ success: true, message: "✅ Account successfully toiri hoyeche!" });
+
   } catch (error) {
     console.error("Signup Error:", error);
     res.status(500).json({ success: false, message: "❌ Server Error: " + error.message });
@@ -97,26 +120,31 @@ app.post('/api/login', async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ success: false, message: "Email ar Password din!" });
   }
+
   try {
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ success: false, message: "❌ Bhul Email ba Password!" });
     }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ success: false, message: "❌ Bhul Email ba Password!" });
     }
+
     const jwtToken = jwt.sign(
       { userId: user._id, username: user.username }, 
       process.env.JWT_SECRET || 'fallback_secret', 
       { expiresIn: '1d' }
     );
+
     res.json({ 
       success: true, 
       message: "✅ Login Successful!", 
       token: jwtToken,
       username: user.username
     });
+
   } catch (error) {
     console.error("Login Error:", error);
     res.status(500).json({ success: false, message: "❌ Server Error: " + error.message });
@@ -140,7 +168,7 @@ app.get("/live-logs", (req, res) => {
 });
 
 // ==========================================
-// UPLOAD COOKIES (Auth Protected)
+// UPLOAD COOKIES (Auth)
 // ==========================================
 app.post("/upload", authMiddleware, upload.single("appstate"), (req, res) => {
   const userId = req.user.userId;
@@ -157,7 +185,7 @@ app.post("/upload", authMiddleware, upload.single("appstate"), (req, res) => {
 });
 
 // ==========================================
-// START BOT (Auth Protected)
+// START BOT (Auth)
 // ==========================================
 app.post("/start", authMiddleware, (req, res) => {
   const userId = req.user.userId;
@@ -184,7 +212,7 @@ app.post("/start", authMiddleware, (req, res) => {
 });
 
 // ==========================================
-// SCAN DIRECT (Auth Protected)
+// SCAN DIRECT (Auth)
 // ==========================================
 app.post("/scan-direct", authMiddleware, (req, res) => {
   const userId = req.user.userId;
@@ -204,7 +232,7 @@ app.post("/scan-direct", authMiddleware, (req, res) => {
 });
 
 // ==========================================
-// SAVE GROUPS (Auth Protected)
+// SAVE GROUPS (Auth)
 // ==========================================
 app.post("/save-groups", authMiddleware, (req, res) => {
   const userId = req.user.userId;
@@ -218,7 +246,7 @@ app.post("/save-groups", authMiddleware, (req, res) => {
 });
 
 // ==========================================
-// POST MESSAGE (Auth Protected)
+// POST MESSAGE (Auth)
 // ==========================================
 app.post("/post", authMiddleware, (req, res) => {
   const userId = req.user.userId;
@@ -248,7 +276,7 @@ app.post("/post", authMiddleware, (req, res) => {
 });
 
 // ==========================================
-// DASHBOARD UI (HTML)
+// DASHBOARD UI ROUTE
 // ==========================================
 app.get("/dashboard", (req, res) => {
   res.sendFile(__dirname + "/public/dashboard.html");

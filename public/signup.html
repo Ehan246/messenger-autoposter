@@ -4,24 +4,53 @@
   <title>Signup - Token Auth</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: Arial; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+    body { font-family: Arial; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
     .box { background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-    h2 { text-align: center; color: #333; }
-    input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
-    button { width: 100%; padding: 12px; background: #1877f2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    h2 { text-align: center; color: #333; margin-bottom: 20px; }
+    input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+    button { width: 100%; padding: 12px; background: #1877f2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; font-size: 15px; }
     button:hover { background: #0f5bbf; }
-    p { text-align: center; color: red; margin-top: 10px; }
+    p#msg { text-align: center; color: red; margin-top: 10px; font-size: 14px; }
+    
+    .login-link { text-align: center; margin-top: 15px; font-size: 14px; color: #666; }
+    .login-link a { color: #1877f2; text-decoration: none; font-weight: bold; }
+    
+    /* Telegram Contact Section */
+    .contact-box { 
+      margin-top: 20px; padding: 15px; background: #e7f3ff; 
+      border: 1px solid #b6d4fe; border-radius: 8px; text-align: center; 
+    }
+    .contact-box p { margin: 0 0 8px 0; font-size: 13px; color: #333; }
+    .contact-box a { 
+      display: inline-block; padding: 8px 15px; background: #0088cc; 
+      color: white; text-decoration: none; border-radius: 20px; 
+      font-weight: bold; font-size: 14px; 
+    }
+    .contact-box a:hover { background: #006699; }
   </style>
 </head>
 <body>
   <div class="box">
     <h2>Create Account</h2>
+    
     <input type="text" id="username" placeholder="Username">
     <input type="email" id="email" placeholder="Email">
     <input type="password" id="password" placeholder="Password">
     <input type="text" id="token" placeholder="Activation Token">
+    <input type="text" id="telegramUsername" placeholder="Telegram Username (optional)">
+    
     <button onclick="signup()">Signup</button>
     <p id="msg"></p>
+    
+    <div class="login-link">
+      Already have an account? <a href="/login.html">Login</a>
+    </div>
+
+    <!-- Telegram Contact for Token -->
+    <div class="contact-box">
+      <p>🔑 Token pete contact koren:</p>
+      <a href="https://t.me/ehan_dibss" target="_blank">📩 @ehan_dibss</a>
+    </div>
   </div>
 
   <script>
@@ -30,7 +59,8 @@
         username: document.getElementById('username').value,
         email: document.getElementById('email').value,
         password: document.getElementById('password').value,
-        token: document.getElementById('token').value
+        token: document.getElementById('token').value,
+        telegramUsername: document.getElementById('telegramUsername').value
       };
 
       const res = await fetch('/api/signup', {
@@ -40,6 +70,15 @@
       });
       const result = await res.json();
       document.getElementById('msg').innerText = result.message;
+      
+      if (result.success) {
+        document.getElementById('msg').style.color = 'green';
+        setTimeout(() => {
+          window.location.href = '/login.html';
+        }, 1500);
+      } else {
+        document.getElementById('msg').style.color = 'red';
+      }
     }
   </script>
 </body>

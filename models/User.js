@@ -5,6 +5,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   tokenId: { type: mongoose.Schema.Types.ObjectId, ref: 'Token', required: true },
+  telegramUsername: { type: String, default: null }, // Eita add koro
   createdAt: { type: Date, default: Date.now }
 });
 
